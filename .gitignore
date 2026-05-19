@@ -1,0 +1,25 @@
+cat > .gitignore << 'EOF'
+# Environment
+.env
+venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Data (generated, not committed)
+backend/data/chroma_db/
+backend/data/product_bm25.pkl
+backend/data/blog_bm25.pkl
+
+# Node
+node_modules/
+frontend/dist/
+
+# OS
+.DS_Store
+Thumbs.db
+EOF
