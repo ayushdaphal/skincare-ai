@@ -160,13 +160,8 @@ export default function ChatWidget() {
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap');
-
-        .widget-btn {
-          animation: widget-shake 15s ease-in-out infinite;
-        }
-        .widget-btn:hover {
-          animation-play-state: paused;
-        }
+        .widget-btn { animation: widget-shake 15s ease-in-out infinite; }
+        .widget-btn:hover { animation-play-state: paused; }
         @keyframes widget-shake {
           0%, 88%, 100% { transform: rotate(0deg) translateY(0); }
           90% { transform: rotate(-4deg) translateY(-2px); }
@@ -199,19 +194,13 @@ export default function ChatWidget() {
           transition: transform .3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity .25s ease;
           transform-origin: bottom left;
         }
-        .widget-window.open {
-          transform: scale(1) translateY(0);
-          opacity: 1;
-        }
-        .widget-window.closed {
-          transform: scale(0.85) translateY(20px);
-          opacity: 0;
-          pointer-events: none;
-        }
+        .widget-window.open { transform: scale(1) translateY(0); opacity: 1; }
+        .widget-window.closed { transform: scale(0.85) translateY(20px); opacity: 0; pointer-events: none; }
         .widget-messages::-webkit-scrollbar { width: 3px; }
         .widget-messages::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 2px; }
-        .mini-card:hover { border-color: #8c30f5 !important; }
+        .mini-card:hover { border-color: #8c30f5 !important; box-shadow: 0 0 0 3px #f3e8ff !important; }
         .suggestion-chip:hover { background: #f3e8ff !important; border-color: #8c30f5 !important; }
+        .chat-input:focus { border-color: #8c30f5 !important; background: white !important; }
       `}</style>
 
       {/* Floating button */}
@@ -228,7 +217,6 @@ export default function ChatWidget() {
             position: 'relative',
           }}
         >
-          {/* Pulse dot */}
           <div className="pulse-dot" style={{
             position: 'absolute', top: '-3px', right: '-3px',
             width: '12px', height: '12px', background: '#10b981',
@@ -328,9 +316,9 @@ export default function ChatWidget() {
                 </div>
               )}
 
-              {/* Mini product cards */}
+              {/* Product cards */}
               {msg.role === 'bot' && msg.products && msg.products.length > 0 && (
-                <div style={{ paddingLeft: '36px', marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div style={{ paddingLeft: '36px', marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {msg.products
                     .filter(p => {
                       if (!p.name) return false
@@ -339,24 +327,62 @@ export default function ChatWidget() {
                     })
                     .slice(0, 3)
                     .map((p, pi) => (
-                      <div key={pi} className="mini-card" style={{
-                        background: 'white', border: '1px solid #e5e7eb',
-                        borderRadius: '10px', padding: '8px 10px', cursor: 'pointer',
-                        transition: 'border-color .15s',
-                        display: 'flex', alignItems: 'center', gap: '8px',
-                      }} onClick={() => p.url && window.open(p.url, '_blank')}>
-                        {p.image && (
-                          <img src={p.image} alt={p.name} style={{
-                            width: '36px', height: '36px', objectFit: 'contain',
-                            borderRadius: '6px', background: '#f9fafb',
-                            border: '1px solid #f3f4f6', flexShrink: 0,
-                          }} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
-                        )}
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: '12px', fontWeight: 600, color: '#111827', lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
-                          <div style={{ fontSize: '11px', color: '#8c30f5', fontWeight: 600, marginTop: '1px' }}>₹{p.price}</div>
+                      <div
+                        key={pi}
+                        className="mini-card"
+                        onClick={() => p.url && window.open(p.url, '_blank')}
+                        style={{
+                          background: 'white', border: '1px solid #e5e7eb',
+                          borderRadius: '12px', padding: '10px 12px',
+                          cursor: 'pointer', transition: 'border-color .15s, box-shadow .15s',
+                        }}
+                      >
+                        {/* Top row: image + name + price */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          {p.image && (
+                            <img
+                              src={p.image}
+                              alt={p.name}
+                              style={{
+                                width: '52px', height: '52px', objectFit: 'contain',
+                                borderRadius: '8px', background: '#f9fafb',
+                                border: '1px solid #f3f4f6', flexShrink: 0,
+                              }}
+                              onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+                            />
+                          )}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{
+                              fontSize: '12px', fontWeight: 600, color: '#111827',
+                              lineHeight: 1.4, marginBottom: '4px',
+                              display: '-webkit-box',
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: 'vertical',
+                              overflow: 'hidden',
+                            }}>
+                              {p.name}
+                            </div>
+                            <div style={{
+                              fontSize: '13px', color: '#8c30f5', fontWeight: 700,
+                            }}>
+                              ₹{p.price}
+                            </div>
+                          </div>
                         </div>
-                        <div style={{ fontSize: '11px', color: '#8c30f5', flexShrink: 0 }}>→</div>
+
+                        {/* Bottom: view link */}
+                        {p.url && (
+                          <div style={{
+                            marginTop: '8px', paddingTop: '8px',
+                            borderTop: '1px solid #f3f4f6',
+                            fontSize: '12px', fontWeight: 500,
+                            color: '#8c30f5',
+                            display: 'flex', alignItems: 'center', gap: '4px',
+                          }}>
+                            View on Clinikally
+                            <span style={{ fontSize: '13px' }}>→</span>
+                          </div>
+                        )}
                       </div>
                     ))}
                 </div>
@@ -387,8 +413,8 @@ export default function ChatWidget() {
               }}>
                 {streamingContent || (
                   <span style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                    {[0,1,2].map(i => (
-                      <span key={i} className={`typing-dot`} style={{
+                    {[0, 1, 2].map(i => (
+                      <span key={i} className="typing-dot" style={{
                         width: '6px', height: '6px', background: '#8c30f5',
                         borderRadius: '50%', display: 'inline-block', opacity: 0.4,
                         animationDelay: `${i * 0.2}s`,
@@ -430,6 +456,7 @@ export default function ChatWidget() {
           flexShrink: 0,
         }}>
           <input
+            className="chat-input"
             ref={inputRef}
             value={input}
             onChange={e => setInput(e.target.value)}
@@ -440,17 +467,22 @@ export default function ChatWidget() {
               flex: 1, border: '1.5px solid #e5e7eb', borderRadius: '10px',
               padding: '9px 13px', fontSize: '13px', fontFamily: 'DM Sans, sans-serif',
               color: '#1a1a2e', background: '#f9fafb', outline: 'none',
+              transition: 'border-color .15s',
             }}
           />
-          <button onClick={() => sendMessage()} disabled={loading || !input.trim()} style={{
-            width: '36px', height: '36px',
-            background: loading || !input.trim() ? '#e5e7eb' : '#8c30f5',
-            border: 'none', borderRadius: '10px',
-            color: loading || !input.trim() ? '#9ca3af' : 'white',
-            fontSize: '16px', cursor: loading || !input.trim() ? 'not-allowed' : 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            flexShrink: 0,
-          }}>↑</button>
+          <button
+            onClick={() => sendMessage()}
+            disabled={loading || !input.trim()}
+            style={{
+              width: '36px', height: '36px',
+              background: loading || !input.trim() ? '#e5e7eb' : '#8c30f5',
+              border: 'none', borderRadius: '10px',
+              color: loading || !input.trim() ? '#9ca3af' : 'white',
+              fontSize: '16px', cursor: loading || !input.trim() ? 'not-allowed' : 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0, transition: 'background .15s',
+            }}
+          >↑</button>
         </div>
       </div>
     </>

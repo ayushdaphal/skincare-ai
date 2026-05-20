@@ -16,19 +16,19 @@ export default function App() {
       }}>
         <div style={{
           fontSize: '32px',
-          fontWeight: 600,
+          fontWeight: 800,
           color: '#e5e7eb',
           fontFamily: 'Inter, sans-serif',
           letterSpacing: '-0.02em',
         }}>
-          Your ecomm site goes here
+          Clinikally
         </div>
         <div style={{
           fontSize: '14px',
           color: '#d1d5db',
           fontFamily: 'Inter, sans-serif',
         }}>
-          Click the button below to chat with your AI Dermat ✨
+          Click the button below to chat with your AI Dermat 
         </div>
       </div>
 
