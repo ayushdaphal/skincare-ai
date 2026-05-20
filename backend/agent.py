@@ -205,16 +205,49 @@ def run_agent(user_message: str, history: list = None) -> dict:
         )
         reply = response.choices[0].message.content
     except Exception as e:
-        reply = f"I found some results but had trouble generating a response. Here's what I found:\n\n{context[:500]}"
+        print(f"[GROQ ERROR] {e}")
+        # Retry once
+        try:
+            response = client.chat.completions.create(
+                model=MODEL,
+                messages=messages,
+                max_tokens=512,
+                temperature=0.7,
+            )
+            reply = response.choices[0].message.content
+        except Exception as e2:
+            print(f"[GROQ ERROR RETRY] {e2}")
+            # Build a clean fallback from structured data
+            if "products" in all_results and all_results["products"].get("results"):
+                products = all_results["products"]["results"]
+                lines = ["Here are some products I found for you:\n"]
+                for p in products[:3]:
+                    name = p.get("name", "")
+                    price = p.get("price", "")
+                    url = p.get("url", "")
+                    if name:
+                        lines.append(f"• **{name}** — ₹{price}" + (f" ([View]({url}))" if url else ""))
+                reply = "\n".join(lines)
+            else:
+                reply = "I found some relevant results but couldn't generate a response right now. Please try again."
 
-   # Extract structured products if available
+ # Only show product cards for products Groq actually mentioned in reply
     structured_products = []
     if "products" in all_results:
-        structured_products = all_results["products"].get("results", [])
+        all_products = all_results["products"].get("results", [])
+        reply_lower = reply.lower()
+        for p in all_products:
+            name = p.get("name", "")
+            if not name:
+                continue
+            # Check if any significant word from product name appears in reply
+            name_words = [w for w in name.lower().split() if len(w) > 3]
+            if any(w in reply_lower for w in name_words):
+                structured_products.append(p)
 
     return {
         "reply": reply,
         "tools_used": tools_used,
         "source": source_label,
-        "products": structured_products if "product" in sources else [],
+        "products": structured_products,
     }

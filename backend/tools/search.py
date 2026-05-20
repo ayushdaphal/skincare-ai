@@ -1,12 +1,14 @@
 import os
 import pickle
+import json
+import re
 import numpy as np
-from sentence_transformers import SentenceTransformer
+from sentence_transformers import SentenceTransformer, CrossEncoder
 import chromadb
 from tavily import TavilyClient
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".env"))
 
 CHROMA_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "embed", "chroma_persistent_storage")
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
@@ -14,6 +16,9 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 # ── Load models + indices once at import time ──
 print("Loading embedding model...")
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
+
+print("Loading cross-encoder reranker...")
+reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
 
 print("Loading ChromaDB...")
 chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
@@ -41,8 +46,15 @@ def _get_embedding(text: str) -> np.ndarray:
 def _cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-9))
 
+def _normalize_query(query: str) -> str:
+    q = query.lower().strip()
+    q = re.sub(r'[^\w\s₹]', ' ', q)
+    q = ' '.join(sorted(q.split()))
+    return q
+
 def _check_cache(query: str):
-    emb = _get_embedding(query)
+    normalized = _normalize_query(query)
+    emb = _get_embedding(normalized)
     for cached_emb, result in _cache.items():
         cached_arr = np.frombuffer(cached_emb, dtype=np.float32)
         if _cosine_sim(emb, cached_arr) >= 0.90:
@@ -56,14 +68,6 @@ def _store_cache(emb: np.ndarray, result):
     _cache[key] = result
 
 # ── Reciprocal Rank Fusion ──
-def _rrf(dense_ids: list, sparse_ids: list, k: int = 60) -> list:
-    scores = {}
-    for rank, doc_id in enumerate(dense_ids):
-        scores[doc_id] = scores.get(doc_id, 0) + 1 / (k + rank)
-    for rank, doc_id in enumerate(sparse_ids):
-        scores[doc_id] = scores.get(doc_id, 0) + 1 / (k + rank)
-    return sorted(scores, key=scores.get, reverse=True)
-
 def _hybrid_search(query: str, source: str, bm25, docs: list, n: int = 5) -> list:
     # Dense search via ChromaDB
     dense_results = collection.query(
@@ -80,15 +84,10 @@ def _hybrid_search(query: str, source: str, bm25, docs: list, n: int = 5) -> lis
     bm25_scores = bm25.get_scores(tokens)
     top_sparse_idx = np.argsort(bm25_scores)[::-1][:n * 2].tolist()
 
-    # Build id maps
-    dense_ids = list(range(len(dense_docs)))
-    sparse_ids = top_sparse_idx
-
-    # RRF merge — use indices into combined pool
+    # RRF merge
     dense_pool = {i: (dense_docs[i], dense_metas[i]) for i in range(len(dense_docs))}
     sparse_pool = {i: (docs[i], {}) for i in top_sparse_idx}
 
-    # Score both pools together by doc text identity
     all_texts = {}
     for i, (doc, meta) in dense_pool.items():
         all_texts[doc] = {"doc": doc, "meta": meta, "dense_rank": i}
@@ -98,7 +97,6 @@ def _hybrid_search(query: str, source: str, bm25, docs: list, n: int = 5) -> lis
         else:
             all_texts[doc]["sparse_rank"] = i
 
-    # RRF scoring
     scored = []
     for text, info in all_texts.items():
         score = 0
@@ -111,6 +109,17 @@ def _hybrid_search(query: str, source: str, bm25, docs: list, n: int = 5) -> lis
     scored.sort(key=lambda x: x[0], reverse=True)
     return [item["doc"] for _, item in scored[:n]]
 
+# ── Cross-encoder reranker ──
+def _rerank(query: str, docs: list, top_n: int = 5) -> list:
+    if not docs:
+        return docs
+    # Use first 512 chars of each doc to keep it fast
+    pairs = [(query, doc[:512]) for doc in docs]
+    scores = reranker.predict(pairs)
+    scored = sorted(zip(scores, docs), key=lambda x: x[0], reverse=True)
+    print(f"[RERANK] top score: {scored[0][0]:.3f} | bottom: {scored[-1][0]:.3f}")
+    return [doc for _, doc in scored[:top_n]]
+
 
 # ── Tool: search_products ──
 def search_products(query: str, max_price: float = None, n: int = 5) -> dict:
@@ -118,10 +127,10 @@ def search_products(query: str, max_price: float = None, n: int = 5) -> dict:
     if cached:
         return cached
 
-    results = _hybrid_search(query, "excel", product_bm25, product_docs, n=n * 2)
+    # Step 1: Hybrid search — get broad candidates
+    results = _hybrid_search(query, "excel", product_bm25, product_docs, n=n * 3)
 
-    # Price filter
-   # Detect skin type from query
+    # Step 2: Price + skin type filter
     skin_type_filters = []
     query_lower = query.lower()
     if "oily" in query_lower:
@@ -156,11 +165,12 @@ def search_products(query: str, max_price: float = None, n: int = 5) -> dict:
             if price_ok and skin_ok:
                 filtered.append(doc)
 
-        results = filtered[:n] if filtered else results[:n]
-    else:
-        results = results[:n]
+        results = filtered if filtered else results
 
-   # Extract key fields for clean output
+    # Step 3: Cross-encoder rerank
+    results = _rerank(query, results[:n * 2], top_n=n)
+
+    # Step 4: Extract key fields
     products = []
     for doc in results:
         p = {}
@@ -197,13 +207,16 @@ def search_blogs(query: str, n: int = 3) -> dict:
     if cached:
         return cached
 
-    results = _hybrid_search(query, "blog", blog_bm25, blog_docs, n=n)
+    # Step 1: Hybrid search
+    results = _hybrid_search(query, "blog", blog_bm25, blog_docs, n=n * 3)
 
+    # Step 2: Cross-encoder rerank
+    results = _rerank(query, results, top_n=n)
+
+    # Step 3: Extract metadata
     blogs = []
     for doc in results:
         b = {"excerpt": doc[:300]}
-        import json
-        import re
         meta_match = re.search(r'Metadata:\s*(\{.*?\})', doc, re.DOTALL)
         if meta_match:
             try:
