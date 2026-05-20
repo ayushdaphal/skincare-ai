@@ -298,7 +298,19 @@ export default function ChatWidget() {
                   border: msg.role === 'bot' ? '1px solid #e5e7eb' : 'none',
                   whiteSpace: 'pre-wrap', wordBreak: 'break-word',
                 }}>
-                  {msg.content}
+                  {msg.content.split('\n').map((line, li) => {
+                    // Bold: **text**
+                    const parts = line.split(/\*\*(.*?)\*\*/g)
+                    return (
+                      <div key={li} style={{ marginBottom: line === '' ? '6px' : '0' }}>
+                        {parts.map((part, pi) =>
+                          pi % 2 === 1
+                            ? <strong key={pi}>{part}</strong>
+                            : part
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
 

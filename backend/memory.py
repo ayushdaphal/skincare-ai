@@ -7,7 +7,9 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env"))
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "sessions.db")
+
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+SUMMARY_MODEL = "llama-3.1-8b-instant"
 
 def _get_conn():
     conn = sqlite3.connect(DB_PATH)
@@ -22,7 +24,7 @@ def _get_conn():
     conn.commit()
     return conn
 
-def _summarize_messages(messages: list, old_summary: str = "") -> str:
+def _summarize(messages: list, old_summary: str = "") -> str:
     if not messages:
         return old_summary
     try:
@@ -33,22 +35,21 @@ def _summarize_messages(messages: list, old_summary: str = "") -> str:
         ])
         prefix = f"Previous context: {old_summary}\n\n" if old_summary else ""
         response = groq_client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model=SUMMARY_MODEL,
             messages=[
                 {
                     "role": "system",
-                    "content": "Summarize this skincare conversation in 2-3 sentences. Focus on: skin type, allergies, concerns mentioned, and products discussed. Be very concise."
+                    "content": "Summarize this skincare conversation in 2-3 sentences. Focus on: skin type, allergies, concerns mentioned, budget, and products discussed. Be very concise."
                 },
                 {
                     "role": "user",
                     "content": f"{prefix}Conversation:\n{conversation}"
                 }
             ],
-            max_tokens=100,
+            max_tokens=120,
             temperature=0,
         )
         summary = response.choices[0].message.content.strip()
-        print(f"[SUMMARY] {summary}")
         return summary
     except Exception as e:
         print(f"[SUMMARY ERROR] {e}")
@@ -72,7 +73,6 @@ def load_history(session_id: str) -> list:
         conn.close()
 
 def _load_raw(session_id: str):
-    """Load messages and summary without injecting summary as system message."""
     conn = _get_conn()
     try:
         row = conn.execute(
@@ -103,19 +103,39 @@ def save_history(session_id: str, messages: list, summary: str = ""):
 def append_turn(session_id: str, user_message: str, assistant_reply: str):
     messages, old_summary = _load_raw(session_id)
 
+    # Add new turn
     messages.append({"role": "user", "content": user_message})
     messages.append({"role": "assistant", "content": assistant_reply})
 
-    new_summary = old_summary
+    total_turns = len(messages) // 2
 
-    # Keep last 5 turns (10 messages)
-    # When exceeded, summarize the overflow and roll it into the summary
-    if len(messages) > 10:
-        to_summarize = messages[:-10]   # everything older than last 5 turns
-        messages = messages[-10:]        # keep only last 5 turns
-        new_summary = _summarize_messages(to_summarize, old_summary)
+    print(f"\n{'='*50}")
+    print(f"[MEMORY] session: {session_id[:8]}...")
+    print(f"[MEMORY] total turns so far: {total_turns}")
+    print(f"[MEMORY] current summary: {old_summary[:100] + '...' if len(old_summary) > 100 else old_summary or 'none'}")
 
-    save_history(session_id, messages, new_summary)
+    if total_turns == 1:
+        print(f"[MEMORY] turn 1 — storing, no summary yet")
+        save_history(session_id, messages, "")
+
+    elif total_turns <= 5:
+        print(f"[MEMORY] turns 2-5 — summarizing all {total_turns} turns")
+        new_summary = _summarize(messages)
+        print(f"[MEMORY] new summary: {new_summary}")
+        save_history(session_id, messages, new_summary)
+
+    else:
+        dropped = messages[:-10]
+        keep = messages[-10:]
+        dropped_turns = len(dropped) // 2
+        print(f"[MEMORY] turn {total_turns} — dropping {dropped_turns} old turn(s), keeping last 5")
+        print(f"[MEMORY] dropped content: {dropped[0]['content'][:80]}...")
+        new_summary = _summarize(dropped, old_summary)
+        print(f"[MEMORY] updated summary: {new_summary}")
+        save_history(session_id, keep, new_summary)
+
+    print(f"[MEMORY] stored turns: {min(total_turns, 5)}/5")
+    print(f"{'='*50}\n")
 
 def clear_session(session_id: str):
     conn = _get_conn()
@@ -123,4 +143,4 @@ def clear_session(session_id: str):
         conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
         conn.commit()
     finally:
-        conn.close()    
+        conn.close()

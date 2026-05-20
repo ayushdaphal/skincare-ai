@@ -11,7 +11,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env
 from tools.search import search_products, search_blogs, web_search
 
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-MODEL = "llama-3.3-70b-versatile"
+MODEL = "llama-3.1-8b-instant"
 ROUTER_MODEL = "llama-3.1-8b-instant"
 
 SYSTEM_PROMPT = """You are a skincare assistant for Clinikally, an Indian skincare platform.
@@ -19,12 +19,15 @@ You will be given search results from our product catalog, blog articles, or the
 Write a helpful, accurate response based ONLY on the provided results.
 
 Response rules:
-- Keep responses SHORT — maximum 3-4 sentences or a bullet list of max 3 items
-- Never mention blog titles, article names, source URLs, or where the info came from
-- Never say "according to our blog", "as mentioned in the article", "based on search results"
-- Just answer naturally and confidently like a knowledgeable dermatologist would
-- Always mention price in INR (₹) when recommending products
-- If recommending products, mention max 3, each in one line
+- Keep responses SHORT — 2-3 sentences maximum
+- Never mention blog titles, article names, source URLs
+- Never use markdown formatting like **bold** or bullet points with dashes
+- Just answer naturally like a knowledgeable dermatologist
+- When recommending products:
+  Write 1 sentence about what suits the user and why
+  Then write EXACTLY: "Here are my top picks for you:"
+  Do NOT describe or name any products in your text — the cards will show them
+- For non-product queries: answer fully in text
 - No long paragraphs — be direct and conversational
 """
 
@@ -53,7 +56,7 @@ def route_query_llm(message: str, last_reply: str = "") -> list:
     context = message
     if last_reply:
         context = f"Previous answer was about: {last_reply[:100]}\nFollow-up question: {message}"
-    
+
     try:
         response = client.chat.completions.create(
             model=ROUTER_MODEL,
@@ -66,10 +69,8 @@ def route_query_llm(message: str, last_reply: str = "") -> list:
         )
         raw = response.choices[0].message.content.strip()
         print(f"[ROUTER LLM] raw={raw}")
-        
-        # Parse JSON array
+
         sources = json.loads(raw)
-        # Validate
         valid = {"product", "blog", "web"}
         sources = [s for s in sources if s in valid]
         if not sources:
@@ -81,9 +82,8 @@ def route_query_llm(message: str, last_reply: str = "") -> list:
 
 
 def route_query_fallback(message: str) -> list:
-    """Keyword fallback if LLM router fails"""
     msg = message.lower()
-    
+
     product_kw = ["recommend", "buy", "product", "serum", "moisturiser", "moisturizer",
                   "sunscreen", "toner", "cleanser", "cream", "gel", "lotion", "under ₹",
                   "budget", "price", "affordable", "brand", "spf", "which product"]
@@ -92,16 +92,16 @@ def route_query_fallback(message: str) -> list:
                "salicylic", "peptide", "ceramide", "skin type", "difference between"]
     web_kw = ["treat", "treatment", "cure", "hormonal", "cause", "causes", "dark circles",
               "acne scars", "diet", "stress", "hormone", "condition", "disease", "symptom"]
-    
+
     has_price = bool(re.search(r'₹\s*\d+|rs\.?\s*\d+|under\s+\d+|below\s+\d+|\d+\s*rupee', msg))
-    
+
     p = sum(1 for kw in product_kw if kw in msg) + (3 if has_price else 0)
     b = sum(1 for kw in blog_kw if kw in msg)
     w = sum(1 for kw in web_kw if kw in msg)
-    
+
     if p == 0 and b == 0 and w == 0:
         return ["blog", "web"]
-    
+
     mx = max(p, b, w)
     threshold = max(1, mx * 0.6)
     sources = []
@@ -126,39 +126,126 @@ def extract_price(message: str):
             return float(match.group(1))
     return None
 
+CLARIFICATION_PROMPT = """You are a skincare assistant helper. 
+Decide if a user query has enough information to recommend specific products.
+
+A query is VAGUE if it's missing key details like:
+- Skin type (oily, dry, combination, sensitive)
+- Specific concern (acne, pigmentation, dryness, etc.)
+- Product type preference (gel, cream, foam, etc.)
+
+A query is SPECIFIC enough if it mentions at least skin type OR a specific concern.
+
+Examples:
+"i want a facewash" → VAGUE
+"i want a moisturiser" → VAGUE  
+"i want a serum" → VAGUE
+"show me sunscreen" → VAGUE
+"facewash for oily skin" → SPECIFIC
+"moisturiser for dry skin with ceramides" → SPECIFIC
+"something for acne" → SPECIFIC
+"vitamin c serum under 500" → SPECIFIC
+"i have oily skin and acne, show me a facewash" → SPECIFIC
+
+If VAGUE, return a JSON object:
+{"clarify": true, "question": "one short friendly question asking for the most important missing detail"}
+
+If SPECIFIC, return:
+{"clarify": false}
+
+Return ONLY the JSON object, nothing else.
+"""
+
+def check_clarification(message: str, history: list) -> dict:
+    """Returns {"clarify": True, "question": "..."} or {"clarify": False}"""
+
+    # If there's already a conversation happening, don't ask again
+    user_turns = [m for m in history if m.get("role") == "user"]
+    if len(user_turns) > 0:
+        return {"clarify": False}
+
+    # If message already has enough context, skip
+    if len(message.split()) >= 5:
+        return {"clarify": False}
+
+    try:
+        response = client.chat.completions.create(
+            model=ROUTER_MODEL,
+            messages=[
+                {"role": "system", "content": CLARIFICATION_PROMPT},
+                {"role": "user", "content": message}
+            ],
+            max_tokens=80,
+            temperature=0,
+        )
+        raw = response.choices[0].message.content.strip()
+        print(f"[CLARIFY] raw={raw}")
+
+        match = re.search(r'\{.*?\}', raw, re.DOTALL)
+        if match:
+            result = json.loads(match.group())
+            return result
+    except Exception as e:
+        print(f"[CLARIFY ERROR] {e}")
+
+    return {"clarify": False}
 
 def run_agent(user_message: str, history: list = None) -> dict:
     if history is None:
         history = []
 
-    # ── Step 1: LLM-based routing ──
+    # ── Step 1: Route ──
     last_reply = ""
+    last_user_msg = ""
     if history:
         for msg in reversed(history):
-            if msg["role"] == "assistant":
+            if msg.get("role") == "assistant" and not last_reply:
                 last_reply = msg["content"]
+            if msg.get("role") == "user" and not last_user_msg:
+                last_user_msg = msg["content"]
+            if last_reply and last_user_msg:
                 break
 
     sources = route_query_llm(user_message, last_reply)
     max_price = extract_price(user_message)
-    print(f"[ROUTER] sources={sources}, max_price={max_price}")
-    # Enrich vague follow-up queries with previous context
-    last_user_msg = ""
-    if history:
-        for msg in reversed(history):
-            if msg.get("role") == "user":
-                last_user_msg = msg["content"]
-                break
 
-    is_followup = len(user_message.split()) <= 6
+# Enrich follow-up — combine with last user message for context
+    is_followup = len(user_message.split()) <= 8
     contextual_query = user_message
-    if is_followup and last_user_msg:
+    if last_user_msg and is_followup:
         contextual_query = f"{last_user_msg} {user_message}"
         print(f"[CONTEXT] enriched: {contextual_query!r}")
 
+    # If previous message was a clarification question (bot asked something),
+    # combine with the original user intent from history
+    if last_reply and "?" in last_reply:
+        # Find the original product intent from history
+        original_intent = ""
+        for msg in history:
+            if msg.get("role") == "user":
+                original_intent = msg["content"]
+                break
+        if original_intent:
+            contextual_query = f"{original_intent} {user_message}"
+            print(f"[CONTEXT] clarification answered: {contextual_query!r}")
+
     print(f"[ROUTER] sources={sources}, max_price={max_price}")
 
-    # ── Step 2: Gather results ──  
+    # ── Step 1.5: Check if query needs clarification ──
+    if "product" in sources:
+        clarify = check_clarification(user_message, history)
+        if clarify.get("clarify"):
+            question = clarify.get("question", "Could you tell me your skin type and main concern?")
+            print(f"[CLARIFY] asking: {question}")
+            return {
+                "reply": question,
+                "tools_used": [],
+                "source": "unknown",
+                "products": [],
+            }
+            
+
+    # ── Step 2: Gather results ──
     all_results = {}
     tools_used = []
     source_label = "unknown"
@@ -230,7 +317,13 @@ def run_agent(user_message: str, history: list = None) -> dict:
 
     # ── Step 4: Generate answer ──
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    messages.extend(history)
+    for msg in history:
+        if msg.get("role") == "system":
+            # Convert summary injection to lightweight user/assistant pair
+            messages.append({"role": "user", "content": f"[Context from earlier: {msg['content']}]"})
+            messages.append({"role": "assistant", "content": "Understood, I'll keep that in mind."})
+        else:
+            messages.append(msg)
     messages.append({
         "role": "user",
         "content": f"User question: {user_message}\n\nSearch results:\n{context}"
@@ -268,19 +361,13 @@ def run_agent(user_message: str, history: list = None) -> dict:
             else:
                 reply = "I found some results but couldn't generate a response right now. Please try again."
 
-    # ── Step 5: Match products mentioned in reply ──
+# ── Step 5: Show products from current search results only ──
     structured_products = []
     if "products" in all_results:
         all_products = all_results["products"].get("results", [])
-        reply_lower = reply.lower()
-        for p in all_products:
-            name = p.get("name", "")
-            if not name:
-                continue
-            name_words = [w for w in name.lower().split() if len(w) > 3]
-            if any(w in reply_lower for w in name_words):
-                structured_products.append(p)
-
+        # Just return top 3 from current search — don't match against reply text
+        # This ensures cards always reflect the current query, not previous ones
+        structured_products = all_products[:3]
     return {
         "reply": reply,
         "tools_used": tools_used,
