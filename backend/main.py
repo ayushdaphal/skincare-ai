@@ -58,6 +58,7 @@ def chat(req: ChatRequest):
         "reply": result["reply"],
         "source": result["source"],
         "tools_used": result["tools_used"],
+        "products": result.get("products", []),
         "session_id": req.session_id,
     }
 
@@ -87,7 +88,7 @@ async def chat_stream(message: str, session_id: str):
             await asyncio.sleep(0.03)
 
         # Send metadata at end
-        yield f"data: {json.dumps({'done': True, 'source': result['source'], 'tools_used': result['tools_used']})}\n\n"
+        yield f"data: {json.dumps({'done': True, 'source': result['source'], 'tools_used': result['tools_used'], 'products': result.get('products', [])})}\n\n"
 
     return StreamingResponse(
         generate(),

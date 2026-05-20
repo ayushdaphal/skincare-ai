@@ -121,19 +121,42 @@ def search_products(query: str, max_price: float = None, n: int = 5) -> dict:
     results = _hybrid_search(query, "excel", product_bm25, product_docs, n=n * 2)
 
     # Price filter
-    if max_price is not None:
+   # Detect skin type from query
+    skin_type_filters = []
+    query_lower = query.lower()
+    if "oily" in query_lower:
+        skin_type_filters = ["oily", "acne", "oil control", "mattif"]
+    elif "dry" in query_lower:
+        skin_type_filters = ["dry", "hydrat", "moisture"]
+    elif "sensitive" in query_lower:
+        skin_type_filters = ["sensitive", "gentle", "fragrance-free"]
+    elif "combination" in query_lower:
+        skin_type_filters = ["combination"]
+
+    if max_price is not None or skin_type_filters:
         filtered = []
         for doc in results:
+            doc_lower = doc.lower()
+            price_ok = True
+            skin_ok = True
+
             for line in doc.split("\n"):
                 if "Variant Price:" in line:
                     try:
                         price = float(line.split(":")[-1].strip())
-                        if price <= max_price:
-                            filtered.append(doc)
+                        if max_price is not None and price > max_price:
+                            price_ok = False
                     except:
                         pass
                     break
-        results = filtered[:n]
+
+            if skin_type_filters:
+                skin_ok = any(kw in doc_lower for kw in skin_type_filters)
+
+            if price_ok and skin_ok:
+                filtered.append(doc)
+
+        results = filtered[:n] if filtered else results[:n]
     else:
         results = results[:n]
 
@@ -159,6 +182,8 @@ def search_products(query: str, max_price: float = None, n: int = 5) -> dict:
                 p["ingredients"] = line.split("]:")[-1].strip()[:200]
             elif "custom.skin_concerns" in line:
                 p["skin_concerns"] = line.split("]:")[-1].strip()
+            elif line.startswith("Image Src:"):
+                p["image"] = line.replace("Image Src:", "").strip()
         products.append(p)
 
     result = {"source": "products", "results": products}

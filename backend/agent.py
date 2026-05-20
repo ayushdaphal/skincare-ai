@@ -108,7 +108,7 @@ def run_agent(user_message: str, history: list = None) -> dict:
                 break
     routing_context = user_message + " " + last_reply[:200]
     sources = route_query(routing_context)
-    
+
     max_price = extract_price(user_message)
     print(f"[ROUTER] sources={sources}, max_price={max_price}")
 
@@ -207,8 +207,14 @@ def run_agent(user_message: str, history: list = None) -> dict:
     except Exception as e:
         reply = f"I found some results but had trouble generating a response. Here's what I found:\n\n{context[:500]}"
 
+   # Extract structured products if available
+    structured_products = []
+    if "products" in all_results:
+        structured_products = all_results["products"].get("results", [])
+
     return {
         "reply": reply,
         "tools_used": tools_used,
         "source": source_label,
+        "products": structured_products if "product" in sources else [],
     }
