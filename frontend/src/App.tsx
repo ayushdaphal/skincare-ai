@@ -4,31 +4,37 @@ import './App.css'
 export default function App() {
   return (
     <>
-      {/* Blank ecomm background */}
       <div style={{
-        height: '100vh',
-        background: '#f4f5f7',
+        minHeight: '100vh',
+        background: 'linear-gradient(135deg, #f4f5f7 0%, #f8f9fb 100%)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         flexDirection: 'column',
         gap: '16px',
+        padding: '20px',
+        fontFamily: 'Inter, sans-serif',
       }}>
         <div style={{
-          fontSize: '32px',
+          fontSize: 'clamp(28px, 8vw, 48px)',
           fontWeight: 800,
-          color: '#e5e7eb',
-          fontFamily: 'Inter, sans-serif',
+          background: 'linear-gradient(135deg, #8c30f5 0%, #6b21a8 100%)',
+          backgroundClip: 'text',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
           letterSpacing: '-0.02em',
+          textAlign: 'center',
         }}>
           Clinikally
         </div>
         <div style={{
-          fontSize: '14px',
-          color: '#d1d5db',
+          fontSize: 'clamp(13px, 4vw, 16px)',
+          color: '#6b7280',
           fontFamily: 'Inter, sans-serif',
+          textAlign: 'center',
+          maxWidth: '300px',
         }}>
-          Click the button below to chat with your AI Dermat 
+          Chat with your AI Dermat to find skincare products & get expert advice
         </div>
       </div>
 

@@ -15,47 +15,39 @@ MODEL = "llama-3.1-8b-instant"
 ROUTER_MODEL = "llama-3.1-8b-instant"
 
 SYSTEM_PROMPT = """You are a skincare assistant for Clinikally, an Indian skincare platform.
-You will be given search results from our product catalog, blog articles, or the web.
 Write a helpful, accurate response based ONLY on the provided results.
 
 Response rules:
 - Keep responses SHORT — 2-3 sentences maximum
-- Never mention blog titles, article names, source URLs
+- Never mention blog titles, article names, or source URLs
 - Never use markdown formatting like **bold** or bullet points with dashes
 - Just answer naturally like a knowledgeable dermatologist
+
 - When recommending products:
-  Write 1 sentence about what suits the user and why
-  Then write EXACTLY: "Here are my top picks for you:"
-  Do NOT describe or name any products in your text — the cards will show them
-- For non-product queries: answer fully in text
-- No long paragraphs — be direct and conversational
+  ONLY IF there is a section titled 'PRODUCTS FROM CLINIKALLY CATALOG' present in the search results below, write 1 sentence about what suits the user and why, followed EXACTLY by the phrase: "Here are my top picks for you:".
+  If that product section is missing or empty, DO NOT write that phrase and DO NOT recommend any items.
+  Do NOT describe or name any products in your text response — the structured cards will handle the visual representation.
 """
 
-ROUTER_PROMPT = """You are a query router for a skincare assistant. 
-Classify the user query into one or more of these sources:
-- "product": user wants product recommendations, wants to buy something, asks about specific products, mentions price/budget
-- "blog": user asks about ingredients, routines, how something works, skin concerns explained, skincare education
-- "web": user asks about medical conditions, treatments, causes of skin issues, dermatology advice
+ROUTER_PROMPT = """You are a query router and context interpreter for a skincare assistant.
+Classify the user's intent into exactly one or more of these sources: "product", "blog", or "web".
 
-Rules:
-- Return ONLY a JSON array with one or more of: "product", "blog", "web"
-- Most queries need only ONE source
-- Only return multiple if the query clearly needs both (e.g. "best niacinamide products for acne" needs product + blog)
-- Examples:
-  "moisturiser for oily skin under 500" → ["product"]
-  "what does retinol do" → ["blog"]  
-  "how to treat hormonal acne" → ["web"]
-  "best vitamin c products and how vitamin c works" → ["product", "blog"]
-  "my skin feels tight" → ["blog"]
-  "sunscreen recommendation" → ["product"]
+Strict Definitions:
+- "product": The user explicitly wants to buy something, wants options, asks for a recommendation list, or specifies a budget/product class (e.g., "show me a sunscreen", "recommend a cleanser").
+- "blog": The user is asking an educational, explanatory, or informational question about an ingredient, a routine, or how something works (e.g., "what does niacinamide do", "how to use retinol"). DO NOT route to product unless they ask to buy or want options.
+- "web": The user asks about severe medical conditions, diseases, deep chronic issues, or underlying physiological causes.
 
-Return ONLY the JSON array, nothing else.
+Return a JSON object exactly matching this schema:
+{
+  "sources": ["product" | "blog" | "web"],
+  "standalone_query": "rewritten independent search string"
+}
 """
 
-def route_query_llm(message: str, last_reply: str = "") -> list:
-    context = message
-    if last_reply:
-        context = f"Previous answer was about: {last_reply[:100]}\nFollow-up question: {message}"
+def route_query_llm(message: str, last_user_msg: str = "", last_reply: str = "") -> dict:
+    context = f"Current User Message: {message}"
+    if last_user_msg:
+        context = f"Previous User Message: {last_user_msg}\nPrevious Assistant Reply: {last_reply}\n\nCurrent User Message: {message}"
 
     try:
         response = client.chat.completions.create(
@@ -64,22 +56,17 @@ def route_query_llm(message: str, last_reply: str = "") -> list:
                 {"role": "system", "content": ROUTER_PROMPT},
                 {"role": "user", "content": context}
             ],
-            max_tokens=20,
+            max_tokens=150,
             temperature=0,
+            response_format={"type": "json_object"} # Forces Llama to reply in crisp JSON
         )
         raw = response.choices[0].message.content.strip()
         print(f"[ROUTER LLM] raw={raw}")
-
-        sources = json.loads(raw)
-        valid = {"product", "blog", "web"}
-        sources = [s for s in sources if s in valid]
-        if not sources:
-            return ["blog"]
-        return sources
+        return json.loads(raw)
     except Exception as e:
-        print(f"[ROUTER ERROR] {e} — falling back to keyword routing")
-        return route_query_fallback(message)
-
+        print(f"[ROUTER ERROR] {e} — falling back")
+        # Direct fallback signature if JSON parser hits an edge case
+        return {"sources": ["product", "blog"], "standalone_query": message}
 
 def route_query_fallback(message: str) -> list:
     msg = message.lower()
@@ -158,15 +145,32 @@ Return ONLY the JSON object, nothing else.
 
 def check_clarification(message: str, history: list) -> dict:
     """Returns {"clarify": True, "question": "..."} or {"clarify": False}"""
-
-    # If there's already a conversation happening, don't ask again
-    user_turns = [m for m in history if m.get("role") == "user"]
-    if len(user_turns) > 0:
+    
+    # REMOVE: the old "if len(user_turns) > 0" block entirely.
+    
+    # Keep the length shortcut only for detailed messages
+    if len(message.split()) >= 6:
         return {"clarify": False}
 
-    # If message already has enough context, skip
-    if len(message.split()) >= 5:
-        return {"clarify": False}
+    try:
+        response = client.chat.completions.create(
+            model=ROUTER_MODEL,
+            messages=[
+                {"role": "system", "content": CLARIFICATION_PROMPT},
+                {"role": "user", "content": message}
+            ],
+            max_tokens=80,
+            temperature=0,
+            response_format={"type": "json_object"}
+        )
+        raw = response.choices[0].message.content.strip()
+        match = re.search(r'\{.*?\}', raw, re.DOTALL)
+        if match:
+            return json.loads(match.group())
+    except Exception as e:
+        print(f"[CLARIFY ERROR] {e}")
+
+    return {"clarify": False}
 
     try:
         response = client.chat.completions.create(
@@ -194,7 +198,7 @@ def run_agent(user_message: str, history: list = None) -> dict:
     if history is None:
         history = []
 
-    # ── Step 1: Route ──
+    # ── Step 1: Gather History Context ──
     last_reply = ""
     last_user_msg = ""
     if history:
@@ -206,37 +210,23 @@ def run_agent(user_message: str, history: list = None) -> dict:
             if last_reply and last_user_msg:
                 break
 
-    sources = route_query_llm(user_message, last_reply)
+    # ── Step 2: Route Intent & Generate Standalone Query ──
+    router_output = route_query_llm(user_message, last_user_msg, last_reply)
+    sources = router_output.get("sources", ["blog"])
+    contextual_query = router_output.get("standalone_query", user_message)
     max_price = extract_price(user_message)
 
-# Enrich follow-up — combine with last user message for context
-    is_followup = len(user_message.split()) <= 8
-    contextual_query = user_message
-    if last_user_msg and is_followup:
-        contextual_query = f"{last_user_msg} {user_message}"
-        print(f"[CONTEXT] enriched: {contextual_query!r}")
-
-    # If previous message was a clarification question (bot asked something),
-    # combine with the original user intent from history
-    if last_reply and "?" in last_reply:
-        # Find the original product intent from history
-        original_intent = ""
-        for msg in history:
-            if msg.get("role") == "user":
-                original_intent = msg["content"]
-                break
-        if original_intent:
-            contextual_query = f"{original_intent} {user_message}"
-            print(f"[CONTEXT] clarification answered: {contextual_query!r}")
-
     print(f"[ROUTER] sources={sources}, max_price={max_price}")
+    print(f"[INTELLIGENT CONTEXT] Standalone Search Target: {contextual_query!r}")
 
-    # ── Step 1.5: Check if query needs clarification ──
+    # ── Step 3: Check if Context Needs Clarification ──
     if "product" in sources:
-        clarify = check_clarification(user_message, history)
+        # CRITICAL FIX: Pass 'contextual_query' here instead of 'user_message'
+        clarify = check_clarification(contextual_query, history)
+        
         if clarify.get("clarify"):
             question = clarify.get("question", "Could you tell me your skin type and main concern?")
-            print(f"[CLARIFY] asking: {question}")
+            print(f"[CLARIFY INTERCEPT] Asking: {question}")
             return {
                 "reply": question,
                 "tools_used": [],
@@ -245,7 +235,7 @@ def run_agent(user_message: str, history: list = None) -> dict:
             }
             
 
-    # ── Step 2: Gather results ──
+    # ── Step 4: Gather Results via Tools ──
     all_results = {}
     tools_used = []
     source_label = "unknown"
@@ -268,7 +258,7 @@ def run_agent(user_message: str, history: list = None) -> dict:
         all_results["web"] = result
         tools_used.append("web_search")
 
-    # Set source label
+    # Enforce correct source tracking labels
     if len(tools_used) > 1:
         source_label = "mixed"
     elif "search_products" in tools_used:

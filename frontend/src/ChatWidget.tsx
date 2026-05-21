@@ -2,6 +2,116 @@ import { useState, useRef, useEffect } from 'react'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
+// Design tokens
+const DESIGN = {
+  colors: {
+    primary: '#8c30f5',
+    success: '#10b981',
+    white: '#ffffff',
+    bg: '#f9fafb',
+    bgLight: '#f4f5f7',
+    border: '#e5e7eb',
+    text: {
+      primary: '#1a1a2e',
+      secondary: '#6b7280',
+      tertiary: '#9ca3af',
+      muted: '#d1d5db',
+    },
+  },
+  spacing: {
+    xs: '4px',
+    sm: '8px',
+    md: '12px',
+    lg: '16px',
+    xl: '20px',
+    '2xl': '24px',
+    '3xl': '32px',
+  },
+  shadows: {
+    sm: '0 1px 2px rgba(0,0,0,0.05)',
+    md: '0 4px 12px rgba(0,0,0,0.08)',
+    lg: '0 12px 24px rgba(0,0,0,0.12)',
+    focus: '0 0 0 3px rgba(140,48,245,0.1)',
+    button: '0 2px 8px rgba(140,48,245,0.25)',
+  },
+  radius: {
+    sm: '6px',
+    md: '12px',
+    lg: '18px',
+    full: '9999px',
+  },
+  fonts: {
+    xs: '10px',
+    sm: '12px',
+    base: '13px',
+    lg: '14px',
+    xl: '15px',
+    '2xl': '16px',
+  },
+  transitions: {
+    fast: '150ms ease',
+    base: '200ms ease',
+    slow: '300ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+  },
+}
+
+// Inline SVG Icons
+const BotIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+    <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5" />
+    <circle cx="7" cy="9" r="1" fill="currentColor" />
+    <circle cx="13" cy="9" r="1" fill="currentColor" />
+    <path d="M8 13 Q10 14 12 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    <path d="M10 3v2M10 15v2M4 10H2M18 10h-2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+  </svg>
+)
+
+const SendIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <path d="M2 8L14 2L8.5 14L7 10L3 8.5L2 8Z" fill="currentColor" />
+  </svg>
+)
+
+const ShoppingIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <path d="M1 3h2l2 10h8l1.5-7H5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    <circle cx="7" cy="14" r="1" fill="currentColor" />
+    <circle cx="13" cy="14" r="1" fill="currentColor" />
+  </svg>
+)
+
+const BlogIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <rect x="2" y="2" width="12" height="12" rx="1" stroke="currentColor" strokeWidth="1.2" />
+    <line x1="4" y1="5" x2="12" y2="5" stroke="currentColor" strokeWidth="1" />
+    <line x1="4" y1="8" x2="12" y2="8" stroke="currentColor" strokeWidth="1" />
+    <line x1="4" y1="11" x2="10" y2="11" stroke="currentColor" strokeWidth="1" />
+  </svg>
+)
+
+const WebIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.2" />
+    <path d="M2 8h12M8 2a6 6 0 0 0 0 12" stroke="currentColor" strokeWidth="1.2" />
+  </svg>
+)
+
+const CloseIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <path d="M2 2l12 12M14 2L2 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+  </svg>
+)
+
+const OnlineIndicator = () => (
+  <div style={{
+    width: '6px',
+    height: '6px',
+    background: DESIGN.colors.success,
+    borderRadius: DESIGN.radius.full,
+    display: 'inline-block',
+  }} />
+)
+
 function getSessionId() {
   let id = sessionStorage.getItem('widget_session_id')
   if (!id) {
@@ -28,18 +138,11 @@ interface Message {
   time: string
 }
 
-const SOURCE_LABELS: Record<string, string> = {
-  products: '🛍️ Product catalog',
-  blogs: '📖 Blog articles',
-  web: '🌐 Web search',
-  mixed: '🔀 Multiple sources',
-}
-
-const SOURCE_COLORS: Record<string, { bg: string; color: string }> = {
-  products: { bg: '#f3e8ff', color: '#8c30f5' },
-  blogs:    { bg: '#ecfdf5', color: '#059669' },
-  web:      { bg: '#fffbeb', color: '#d97706' },
-  mixed:    { bg: '#f3e8ff', color: '#8c30f5' },
+const SOURCE_INFO: Record<string, { label: string; icon: React.ReactNode; bg: string; color: string }> = {
+  products: { label: 'Product catalog', icon: <ShoppingIcon />, bg: '#fef3c7', color: '#d97706' },
+  blogs: { label: 'Blog articles', icon: <BlogIcon />, bg: '#ecfdf5', color: '#059669' },
+  web: { label: 'Web search', icon: <WebIcon />, bg: '#eff6ff', color: '#0284c7' },
+  mixed: { label: 'Multiple sources', icon: <ShoppingIcon />, bg: '#f3e8ff', color: '#8c30f5' },
 }
 
 const SUGGESTIONS = [
@@ -52,12 +155,28 @@ function getTime() {
   return new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
 }
 
+// Responsive hook
+function useWindowSize() {
+  const [size, setSize] = useState<{ width: number; height: number }>({ width: typeof window !== 'undefined' ? window.innerWidth : 1024, height: typeof window !== 'undefined' ? window.innerHeight : 768 })
+  
+  useEffect(() => {
+    const handleResize = () => {
+      setSize({ width: window.innerWidth, height: window.innerHeight })
+    }
+    
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+  
+  return size
+}
+
 export default function ChatWidget() {
   const [isOpen, setIsOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'bot',
-      content: "Hi! I'm your AI Dermat 👋\n\nI can help you find the right skincare products, explain ingredients, and answer any skin concerns. What's on your mind?",
+      content: 'Hi! I\'m your AI Dermat.\n\nI can help you find the right skincare products, explain ingredients, and answer any skin concerns. What\'s on your mind?',
       time: getTime(),
     }
   ])
@@ -69,6 +188,9 @@ export default function ChatWidget() {
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const sessionId = useRef(getSessionId())
+  const windowSize = useWindowSize()
+
+  const isMobile = windowSize.width < 640
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -130,25 +252,25 @@ export default function ChatWidget() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: msg, session_id: sessionId.current })
         })
-        .then(r => r.json())
-        .then(data => {
-          setLoading(false)
-          setMessages(prev => [...prev, {
-            role: 'bot',
-            content: data.reply,
-            source: data.source,
-            products: data.products || [],
-            time: getTime(),
-          }])
-        })
-        .catch(() => {
-          setLoading(false)
-          setMessages(prev => [...prev, {
-            role: 'bot',
-            content: 'Sorry, something went wrong. Please try again.',
-            time: getTime(),
-          }])
-        })
+          .then(r => r.json())
+          .then(data => {
+            setLoading(false)
+            setMessages(prev => [...prev, {
+              role: 'bot',
+              content: data.reply,
+              source: data.source,
+              products: data.products || [],
+              time: getTime(),
+            }])
+          })
+          .catch(() => {
+            setLoading(false)
+            setMessages(prev => [...prev, {
+              role: 'bot',
+              content: 'Sorry, something went wrong. Please try again.',
+              time: getTime(),
+            }])
+          })
       }
     } catch {
       setLoading(false)
@@ -156,80 +278,180 @@ export default function ChatWidget() {
     }
   }
 
+  // Responsive sizing
+  const buttonBottom = isMobile ? '20px' : '28px'
+  const buttonLeft = isMobile ? '16px' : '28px'
+  const windowBottom = isMobile ? '80px' : '100px'
+  const windowWidth = isMobile ? 'calc(100vw - 32px)' : '380px'
+  const windowHeight = isMobile ? 'calc(100vh - 120px)' : '620px'
+
   return (
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap');
-        .widget-btn { animation: widget-shake 15s ease-in-out infinite; }
-        .widget-btn:hover { animation-play-state: paused; }
-        @keyframes widget-shake {
-          0%, 88%, 100% { transform: rotate(0deg) translateY(0); }
-          90% { transform: rotate(-4deg) translateY(-2px); }
-          92% { transform: rotate(4deg) translateY(-2px); }
-          94% { transform: rotate(-3deg) translateY(-1px); }
-          96% { transform: rotate(3deg) translateY(-1px); }
-          98% { transform: rotate(-1deg) translateY(0); }
+        
+        * { box-sizing: border-box; }
+        
+        @keyframes glow-pulse {
+          0%, 100% { box-shadow: 0 8px 32px rgba(140, 48, 245, 0.4); }
+          50% { box-shadow: 0 8px 32px rgba(140, 48, 245, 0.6); }
         }
+        
+        .widget-btn-pulse { animation: glow-pulse 3s ease-in-out infinite; }
+        .widget-btn:hover { animation-play-state: paused; }
+        
+        @keyframes pulse-ring {
+          0% { transform: scale(1); opacity: 0.5; }
+          100% { transform: scale(1.8); opacity: 0; }
+        }
+        
         .pulse-dot::after {
           content: '';
           position: absolute;
-          inset: -4px;
+          inset: -6px;
           border-radius: 50%;
-          background: #10b981;
-          opacity: 0.4;
+          background: ${DESIGN.colors.success};
+          opacity: 0.5;
           animation: pulse-ring 2s ease-out infinite;
         }
-        @keyframes pulse-ring {
-          0% { transform: scale(1); opacity: 0.4; }
-          100% { transform: scale(2.2); opacity: 0; }
-        }
+        
         @keyframes typing-bounce {
           0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-          30% { transform: translateY(-5px); opacity: 1; }
+          30% { transform: translateY(-4px); opacity: 1; }
         }
+        
         .typing-dot { animation: typing-bounce 1.2s infinite; }
         .typing-dot:nth-child(2) { animation-delay: 0.2s; }
         .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+        
         .widget-window {
-          transition: transform .3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity .25s ease;
+          transition: all ${DESIGN.transitions.slow};
           transform-origin: bottom left;
         }
-        .widget-window.open { transform: scale(1) translateY(0); opacity: 1; }
-        .widget-window.closed { transform: scale(0.85) translateY(20px); opacity: 0; pointer-events: none; }
-        .widget-messages::-webkit-scrollbar { width: 3px; }
-        .widget-messages::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 2px; }
-        .mini-card:hover { border-color: #8c30f5 !important; box-shadow: 0 0 0 3px #f3e8ff !important; }
-        .suggestion-chip:hover { background: #f3e8ff !important; border-color: #8c30f5 !important; }
-        .chat-input:focus { border-color: #8c30f5 !important; background: white !important; }
+        
+        .widget-window.open { 
+          transform: scale(1) translateY(0); 
+          opacity: 1; 
+        }
+        
+        .widget-window.closed { 
+          transform: scale(0.85) translateY(20px); 
+          opacity: 0; 
+          pointer-events: none; 
+        }
+        
+        .widget-messages::-webkit-scrollbar { width: 2px; }
+        .widget-messages::-webkit-scrollbar-track { background: transparent; }
+        .widget-messages::-webkit-scrollbar-thumb { 
+          background: ${DESIGN.colors.border}; 
+          border-radius: 2px; 
+        }
+        .widget-messages::-webkit-scrollbar-thumb:hover { 
+          background: ${DESIGN.colors.text.secondary}; 
+        }
+        
+        .card-hover:hover { 
+          box-shadow: 0 8px 20px rgba(0,0,0,0.12) !important;
+          transform: translateY(-2px);
+        }
+        
+        .chip-hover:hover { 
+          background: ${DESIGN.colors.primary} !important;
+          color: white !important;
+          border-color: ${DESIGN.colors.primary} !important;
+        }
+        
+        .input-focus:focus { 
+          border-color: ${DESIGN.colors.primary} !important;
+          box-shadow: ${DESIGN.shadows.focus} !important;
+          background: white !important;
+        }
+        
+        @media (max-width: 640px) {
+          .widget-window {
+            left: 16px !important;
+            right: 16px !important;
+            width: auto !important;
+            bottom: 80px !important;
+            height: calc(100vh - 120px) !important;
+            border-radius: 16px !important;
+          }
+          
+          .widget-btn {
+            bottom: 20px !important;
+            left: 16px !important;
+          }
+          
+          .suggestion-area {
+            flex-wrap: wrap;
+          }
+        }
       `}</style>
 
       {/* Floating button */}
-      <div style={{ position: 'fixed', bottom: '28px', left: '28px', zIndex: 1000 }}>
+      <div style={{
+        position: 'fixed',
+        bottom: buttonBottom,
+        left: buttonLeft,
+        zIndex: 998,
+        transition: `all ${DESIGN.transitions.base}`,
+      }}>
         <button
-          className="widget-btn"
+          className="widget-btn-pulse"
           onClick={() => setIsOpen(o => !o)}
           style={{
-            display: 'flex', alignItems: 'center', gap: '10px',
-            background: '#8c30f5', color: 'white', border: 'none',
-            borderRadius: '50px', padding: '14px 20px', cursor: 'pointer',
-            fontFamily: 'DM Sans, sans-serif', fontSize: '14px', fontWeight: 600,
-            boxShadow: '0 8px 32px rgba(140,48,245,0.4)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '4px',
+            background: DESIGN.colors.primary,
+            color: DESIGN.colors.white,
+            border: 'none',
+            borderRadius: DESIGN.radius.sm,
+            padding: `${DESIGN.spacing.sm} ${DESIGN.spacing.md}`,
+            cursor: 'pointer',
+            fontFamily: 'DM Sans, sans-serif',
+            fontSize: '11px',
+            fontWeight: 600,
+            boxShadow: DESIGN.shadows.button,
             position: 'relative',
+            transition: `all ${DESIGN.transitions.base}`,
+          }}
+          onMouseEnter={e => {
+            (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-2px)'
+            ;(e.currentTarget as HTMLButtonElement).style.boxShadow = '0 4px 12px rgba(140,48,245,0.35)'
+          }}
+          onMouseLeave={e => {
+            (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'
+            ;(e.currentTarget as HTMLButtonElement).style.boxShadow = DESIGN.shadows.button
           }}
         >
           <div className="pulse-dot" style={{
-            position: 'absolute', top: '-3px', right: '-3px',
-            width: '12px', height: '12px', background: '#10b981',
-            borderRadius: '50%', border: '2px solid white',
+            position: 'absolute',
+            top: '-8px',
+            right: '-8px',
+            width: '10px',
+            height: '10px',
+            background: DESIGN.colors.success,
+            borderRadius: DESIGN.radius.full,
+            border: `2px solid ${DESIGN.colors.white}`,
           }} />
           <div style={{
-            width: '34px', height: '34px', background: 'rgba(255,255,255,0.2)',
-            borderRadius: '50%', display: 'flex', alignItems: 'center',
-            justifyContent: 'center', fontSize: '18px', flexShrink: 0,
-          }}>✨</div>
-          <div>
-            <div style={{ fontSize: '14px', fontWeight: 600, lineHeight: 1.2 }}>Your AI Dermat</div>
-            <div style={{ fontSize: '11px', opacity: 0.85, fontWeight: 400 }}>Ask me anything about skin</div>
+            width: '28px',
+            height: '28px',
+            background: 'rgba(255,255,255,0.2)',
+            borderRadius: DESIGN.radius.sm,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: DESIGN.colors.white,
+            flexShrink: 0,
+          }}>
+            <BotIcon />
+          </div>
+          <div style={{ textAlign: 'center', lineHeight: '1.1', fontSize: '10px' }}>
+            <div style={{ fontWeight: 600 }}>AI Dermat</div>
+            <div style={{ opacity: 0.8, fontWeight: 400, fontSize: '9px' }}>Chat now</div>
           </div>
         </button>
       </div>
@@ -238,74 +460,151 @@ export default function ChatWidget() {
       <div
         className={`widget-window ${isOpen ? 'open' : 'closed'}`}
         style={{
-          position: 'fixed', bottom: '100px', left: '28px',
-          width: '380px', height: '620px',
-          background: '#ffffff', borderRadius: '20px',
-          boxShadow: '0 24px 80px rgba(0,0,0,0.18), 0 4px 16px rgba(140,48,245,0.12)',
-          display: 'flex', flexDirection: 'column', overflow: 'hidden',
-          zIndex: 999, border: '1px solid rgba(140,48,245,0.15)',
+          position: 'fixed',
+          bottom: windowBottom,
+          left: buttonLeft,
+          width: windowWidth,
+          height: windowHeight,
+          maxWidth: 'calc(100vw - 32px)',
+          background: DESIGN.colors.white,
+          borderRadius: DESIGN.radius.lg,
+          boxShadow: DESIGN.shadows.lg,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          zIndex: 999,
+          border: `1px solid ${DESIGN.colors.border}`,
           fontFamily: 'DM Sans, sans-serif',
         }}
       >
         {/* Header */}
         <div style={{
-          padding: '16px 18px', background: '#8c30f5',
-          display: 'flex', alignItems: 'center', gap: '12px',
+          padding: `${DESIGN.spacing.lg} ${DESIGN.spacing.lg}`,
+          background: DESIGN.colors.primary,
+          display: 'flex',
+          alignItems: 'center',
+          gap: DESIGN.spacing.md,
           flexShrink: 0,
+          borderBottom: `1px solid rgba(140,48,245,0.2)`,
         }}>
           <div style={{
-            width: '38px', height: '38px', background: 'rgba(255,255,255,0.2)',
-            borderRadius: '50%', display: 'flex', alignItems: 'center',
-            justifyContent: 'center', fontSize: '20px',
-            border: '2px solid rgba(255,255,255,0.3)',
-          }}>✨</div>
+            width: '36px',
+            height: '36px',
+            background: 'rgba(255,255,255,0.15)',
+            borderRadius: DESIGN.radius.md,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: DESIGN.colors.white,
+            flexShrink: 0,
+          }}>
+            <BotIcon />
+          </div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: '15px', fontWeight: 600, color: 'white' }}>Your AI Dermat</div>
-            <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.8)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-              <div style={{ width: '6px', height: '6px', background: '#4ade80', borderRadius: '50%' }} />
-              Online · by Clinikally
+            <div style={{
+              fontSize: DESIGN.fonts.lg,
+              fontWeight: 600,
+              color: DESIGN.colors.white,
+            }}>
+              Your AI Dermat
+            </div>
+            <div style={{
+              fontSize: DESIGN.fonts.sm,
+              color: 'rgba(255,255,255,0.75)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: DESIGN.spacing.xs,
+              marginTop: '2px',
+            }}>
+              <OnlineIndicator />
+              <span>Online</span>
             </div>
           </div>
-          <button onClick={() => setIsOpen(false)} style={{
-            width: '30px', height: '30px', background: 'rgba(255,255,255,0.15)',
-            border: 'none', borderRadius: '50%', color: 'white', fontSize: '14px',
-            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>✕</button>
+          <button
+            onClick={() => setIsOpen(false)}
+            style={{
+              width: '32px',
+              height: '32px',
+              background: 'rgba(255,255,255,0.15)',
+              border: 'none',
+              borderRadius: DESIGN.radius.sm,
+              color: DESIGN.colors.white,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: `all ${DESIGN.transitions.fast}`,
+              padding: 0,
+            }}
+            onMouseEnter={e => {
+              (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.25)'
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.15)'
+            }}
+          >
+            <CloseIcon />
+          </button>
         </div>
 
         {/* Messages */}
         <div className="widget-messages" style={{
-          flex: 1, overflowY: 'auto', padding: '14px',
-          background: '#f9fafb', display: 'flex', flexDirection: 'column', gap: '10px',
+          flex: 1,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          padding: DESIGN.spacing.lg,
+          background: DESIGN.colors.bg,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: DESIGN.spacing.lg,
         }}>
           {messages.map((msg, i) => (
-            <div key={i}>
-              <div style={{ display: 'flex', gap: '8px', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+            <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: DESIGN.spacing.xs }}>
+              {/* Message bubble */}
+              <div style={{
+                display: 'flex',
+                gap: DESIGN.spacing.md,
+                justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                alignItems: 'flex-end',
+              }}>
                 {msg.role === 'bot' && (
                   <div style={{
-                    width: '28px', height: '28px', background: '#f3e8ff',
-                    borderRadius: '50%', display: 'flex', alignItems: 'center',
-                    justifyContent: 'center', fontSize: '14px', flexShrink: 0, alignSelf: 'flex-end',
-                  }}>✨</div>
+                    width: '28px',
+                    height: '28px',
+                    background: DESIGN.colors.primary,
+                    borderRadius: DESIGN.radius.md,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: DESIGN.fonts.lg,
+                    flexShrink: 0,
+                    color: DESIGN.colors.white,
+                  }}>
+                    <BotIcon />
+                  </div>
                 )}
                 <div style={{
-                  maxWidth: '78%', padding: '10px 13px',
-                  borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                  background: msg.role === 'user' ? '#8c30f5' : 'white',
-                  color: msg.role === 'user' ? 'white' : '#1a1a2e',
-                  fontSize: '13px', lineHeight: '1.6',
-                  boxShadow: msg.role === 'user' ? '0 2px 8px rgba(140,48,245,0.25)' : '0 1px 4px rgba(0,0,0,0.06)',
-                  border: msg.role === 'bot' ? '1px solid #e5e7eb' : 'none',
-                  whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                  maxWidth: '75%',
+                  padding: `${DESIGN.spacing.md} ${DESIGN.spacing.lg}`,
+                  borderRadius: msg.role === 'user'
+                    ? `${DESIGN.radius.md} ${DESIGN.radius.md} ${DESIGN.radius.sm} ${DESIGN.radius.md}`
+                    : `${DESIGN.radius.md} ${DESIGN.radius.md} ${DESIGN.radius.md} ${DESIGN.radius.sm}`,
+                  background: msg.role === 'user' ? DESIGN.colors.primary : DESIGN.colors.white,
+                  color: msg.role === 'user' ? DESIGN.colors.white : DESIGN.colors.text.primary,
+                  fontSize: DESIGN.fonts.base,
+                  lineHeight: 1.5,
+                  boxShadow: msg.role === 'user' ? DESIGN.shadows.button : DESIGN.shadows.sm,
+                  border: msg.role === 'bot' ? `1px solid ${DESIGN.colors.border}` : 'none',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
                 }}>
                   {msg.content.split('\n').map((line, li) => {
-                    // Bold: **text**
                     const parts = line.split(/\*\*(.*?)\*\*/g)
                     return (
-                      <div key={li} style={{ marginBottom: line === '' ? '6px' : '0' }}>
+                      <div key={li} style={{ marginBottom: line === '' ? DESIGN.spacing.sm : '0' }}>
                         {parts.map((part, pi) =>
                           pi % 2 === 1
-                            ? <strong key={pi}>{part}</strong>
+                            ? <strong key={pi} style={{ fontWeight: 600 }}>{part}</strong>
                             : part
                         )}
                       </div>
@@ -315,122 +614,178 @@ export default function ChatWidget() {
               </div>
 
               {/* Source badge */}
-              {msg.role === 'bot' && msg.source && SOURCE_LABELS[msg.source] && (
-                <div style={{ paddingLeft: '36px', marginTop: '4px' }}>
-                  <span style={{
-                    fontSize: '10px', fontWeight: 500, padding: '2px 8px',
-                    borderRadius: '20px', display: 'inline-block',
-                    background: SOURCE_COLORS[msg.source]?.bg || '#f3f4f6',
-                    color: SOURCE_COLORS[msg.source]?.color || '#6b7280',
+              {msg.role === 'bot' && msg.source && SOURCE_INFO[msg.source] && (
+                <div style={{ paddingLeft: '36px', display: 'flex', gap: DESIGN.spacing.xs, alignItems: 'center' }}>
+                  <div style={{
+                    fontSize: DESIGN.fonts.xs,
+                    fontWeight: 500,
+                    padding: `${DESIGN.spacing.xs} ${DESIGN.spacing.md}`,
+                    borderRadius: DESIGN.radius.full,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: DESIGN.spacing.xs,
+                    background: SOURCE_INFO[msg.source].bg,
+                    color: SOURCE_INFO[msg.source].color,
                   }}>
-                    {SOURCE_LABELS[msg.source]}
-                  </span>
+                    <span style={{ display: 'flex', alignItems: 'center', width: '12px', height: '12px' }}>
+                      {SOURCE_INFO[msg.source].icon}
+                    </span>
+                    {SOURCE_INFO[msg.source].label}
+                  </div>
                 </div>
               )}
 
-              {/* Product cards */}
-              {msg.role === 'bot' && msg.products && msg.products.length > 0 && (
-                <div style={{ paddingLeft: '36px', marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {msg.products
-                    .filter(p => {
-                      if (!p.name) return false
-                      const words = p.name.toLowerCase().split(' ').filter(w => w.length > 3)
-                      return words.some(w => msg.content.toLowerCase().includes(w))
-                    })
-                    .slice(0, 3)
-                    .map((p, pi) => (
-                      <div
-                        key={pi}
-                        className="mini-card"
-                        onClick={() => p.url && window.open(p.url, '_blank')}
-                        style={{
-                          background: 'white', border: '1px solid #e5e7eb',
-                          borderRadius: '12px', padding: '10px 12px',
-                          cursor: 'pointer', transition: 'border-color .15s, box-shadow .15s',
-                        }}
-                      >
-                        {/* Top row: image + name + price */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          {p.image && (
-                            <img
-                              src={p.image}
-                              alt={p.name}
-                              style={{
-                                width: '52px', height: '52px', objectFit: 'contain',
-                                borderRadius: '8px', background: '#f9fafb',
-                                border: '1px solid #f3f4f6', flexShrink: 0,
-                              }}
-                              onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
-                            />
-                          )}
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{
-                              fontSize: '12px', fontWeight: 600, color: '#111827',
-                              lineHeight: 1.4, marginBottom: '4px',
-                              display: '-webkit-box',
-                              WebkitLineClamp: 2,
-                              WebkitBoxOrient: 'vertical',
-                              overflow: 'hidden',
-                            }}>
-                              {p.name}
-                            </div>
-                            <div style={{
-                              fontSize: '13px', color: '#8c30f5', fontWeight: 700,
-                            }}>
-                              ₹{p.price}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Bottom: view link */}
-                        {p.url && (
-                          <div style={{
-                            marginTop: '8px', paddingTop: '8px',
-                            borderTop: '1px solid #f3f4f6',
-                            fontSize: '12px', fontWeight: 500,
-                            color: '#8c30f5',
-                            display: 'flex', alignItems: 'center', gap: '4px',
-                          }}>
-                            View on Clinikally
-                            <span style={{ fontSize: '13px' }}>→</span>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                </div>
-              )}
-
+             {/* Product cards */}
+{msg.role === 'bot' && msg.products && msg.products.length > 0 && (
+  <div style={{
+    paddingLeft: '36px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: DESIGN.spacing.md,
+  }}>
+    {msg.products
+      .slice(0, 3)
+      .map((p, pi) => (
+        <div
+          key={pi}
+          className="card-hover"
+          onClick={() => p.url && window.open(p.url, '_blank')}
+          style={{
+            background: DESIGN.colors.white,
+            border: `1px solid ${DESIGN.colors.border}`,
+            borderRadius: DESIGN.radius.md,
+            padding: DESIGN.spacing.md,
+            cursor: 'pointer',
+            transition: `all ${DESIGN.transitions.base}`,
+            boxShadow: DESIGN.shadows.sm,
+          }}
+        >
+          {/* Product image + details */}
+          <div style={{
+            display: 'flex',
+            gap: DESIGN.spacing.md,
+            alignItems: 'flex-start',
+          }}>
+            {p.image && (
+              <img
+                src={p.image}
+                alt={p.name}
+                style={{
+                  width: '56px',
+                  height: '56px',
+                  objectFit: 'contain',
+                  borderRadius: DESIGN.radius.sm,
+                  background: DESIGN.colors.bg,
+                  border: `1px solid ${DESIGN.colors.border}`,
+                  flexShrink: 0,
+                  padding: DESIGN.spacing.xs,
+                }}
+                onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+              />
+            )}
+            <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{
-                fontSize: '10px', color: '#9ca3af', marginTop: '4px',
+                fontSize: DESIGN.fonts.sm,
+                fontWeight: 600,
+                color: DESIGN.colors.text.primary,
+                lineHeight: 1.4,
+                marginBottom: DESIGN.spacing.xs,
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+              }}>
+                {p.name}
+              </div>
+              <div style={{
+                fontSize: DESIGN.fonts.lg,
+                color: DESIGN.colors.primary,
+                fontWeight: 700,
+              }}>
+                ₹{p.price}
+              </div>
+            </div>
+          </div>
+
+          {/* View link */}
+          {p.url && (
+            <div style={{
+              marginTop: DESIGN.spacing.md,
+              paddingTop: DESIGN.spacing.md,
+              borderTop: `1px solid ${DESIGN.colors.border}`,
+              fontSize: DESIGN.fonts.sm,
+              fontWeight: 500,
+              color: DESIGN.colors.primary,
+              display: 'flex',
+              alignItems: 'center',
+              gap: DESIGN.spacing.xs,
+              transition: `opacity ${DESIGN.transitions.fast}`,
+            }}>
+              View Product
+              <span>→</span>
+            </div>
+          )}
+        </div>
+      ))}
+  </div>
+)}
+
+              {/* Timestamp */}
+              <div style={{
+                fontSize: DESIGN.fonts.xs,
+                color: DESIGN.colors.text.tertiary,
                 textAlign: msg.role === 'user' ? 'right' : 'left',
                 paddingLeft: msg.role === 'bot' ? '36px' : '0',
-              }}>{msg.time}</div>
+              }}>
+                {msg.time}
+              </div>
             </div>
           ))}
 
           {/* Streaming message */}
           {isStreaming && (
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div style={{ display: 'flex', gap: DESIGN.spacing.md, alignItems: 'flex-end' }}>
               <div style={{
-                width: '28px', height: '28px', background: '#f3e8ff',
-                borderRadius: '50%', display: 'flex', alignItems: 'center',
-                justifyContent: 'center', fontSize: '14px', flexShrink: 0, alignSelf: 'flex-end',
-              }}>✨</div>
+                width: '28px',
+                height: '28px',
+                background: DESIGN.colors.primary,
+                borderRadius: DESIGN.radius.md,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: DESIGN.fonts.lg,
+                flexShrink: 0,
+                color: DESIGN.colors.white,
+              }}>
+                <BotIcon />
+              </div>
               <div style={{
-                maxWidth: '78%', padding: '10px 13px',
-                borderRadius: '16px 16px 16px 4px',
-                background: 'white', color: '#1a1a2e', fontSize: '13px',
-                lineHeight: '1.6', boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-                border: '1px solid #e5e7eb', whiteSpace: 'pre-wrap',
+                maxWidth: '75%',
+                padding: `${DESIGN.spacing.md} ${DESIGN.spacing.lg}`,
+                borderRadius: `${DESIGN.radius.md} ${DESIGN.radius.md} ${DESIGN.radius.md} ${DESIGN.radius.sm}`,
+                background: DESIGN.colors.white,
+                color: DESIGN.colors.text.primary,
+                fontSize: DESIGN.fonts.base,
+                lineHeight: 1.5,
+                boxShadow: DESIGN.shadows.sm,
+                border: `1px solid ${DESIGN.colors.border}`,
+                whiteSpace: 'pre-wrap',
               }}>
                 {streamingContent || (
-                  <span style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                  <span style={{ display: 'flex', gap: DESIGN.spacing.xs, alignItems: 'center' }}>
                     {[0, 1, 2].map(i => (
-                      <span key={i} className="typing-dot" style={{
-                        width: '6px', height: '6px', background: '#8c30f5',
-                        borderRadius: '50%', display: 'inline-block', opacity: 0.4,
-                        animationDelay: `${i * 0.2}s`,
-                      }} />
+                      <span
+                        key={i}
+                        className="typing-dot"
+                        style={{
+                          width: '6px',
+                          height: '6px',
+                          background: DESIGN.colors.primary,
+                          borderRadius: DESIGN.radius.full,
+                          display: 'inline-block',
+                          opacity: 0.4,
+                        }}
+                      />
                     ))}
                   </span>
                 )}
@@ -443,58 +798,98 @@ export default function ChatWidget() {
 
         {/* Suggestions */}
         {showSuggestions && (
-          <div style={{
-            padding: '8px 14px 10px', background: '#f9fafb',
-            display: 'flex', gap: '6px', flexWrap: 'wrap',
-            borderTop: '1px solid #f3f4f6',
+          <div className="suggestion-area" style={{
+            padding: `${DESIGN.spacing.md} ${DESIGN.spacing.lg} ${DESIGN.spacing.lg}`,
+            background: DESIGN.colors.bg,
+            display: 'flex',
+            gap: DESIGN.spacing.sm,
+            flexWrap: 'wrap',
+            borderTop: `1px solid ${DESIGN.colors.border}`,
           }}>
             {SUGGESTIONS.map((s, i) => (
-              <button key={i} className="suggestion-chip" onClick={() => sendMessage(s)} style={{
-                fontSize: '12px', padding: '5px 11px', borderRadius: '20px',
-                background: 'white', border: '1px solid #e5e7eb', color: '#8c30f5',
-                cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontWeight: 500,
-                transition: 'all .15s',
-              }}>
+              <button
+                key={i}
+                className="chip-hover"
+                onClick={() => sendMessage(s)}
+                style={{
+                  fontSize: DESIGN.fonts.sm,
+                  padding: `${DESIGN.spacing.xs} ${DESIGN.spacing.md}`,
+                  borderRadius: DESIGN.radius.full,
+                  background: DESIGN.colors.white,
+                  border: `1px solid ${DESIGN.colors.border}`,
+                  color: DESIGN.colors.primary,
+                  cursor: 'pointer',
+                  fontFamily: 'DM Sans, sans-serif',
+                  fontWeight: 500,
+                  transition: `all ${DESIGN.transitions.fast}`,
+                }}
+              >
                 {s}
               </button>
             ))}
           </div>
         )}
 
-        {/* Input */}
+        {/* Input area */}
         <div style={{
-          padding: '12px 14px', borderTop: '1px solid #e5e7eb',
-          background: 'white', display: 'flex', gap: '8px', alignItems: 'center',
+          padding: DESIGN.spacing.md,
+          borderTop: `1px solid ${DESIGN.colors.border}`,
+          background: DESIGN.colors.white,
+          display: 'flex',
+          gap: DESIGN.spacing.sm,
+          alignItems: 'center',
           flexShrink: 0,
         }}>
           <input
-            className="chat-input"
+            className="input-focus"
             ref={inputRef}
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && sendMessage()}
-            placeholder="Ask about skin, products, ingredients..."
+            placeholder="Ask anything..."
             disabled={loading}
             style={{
-              flex: 1, border: '1.5px solid #e5e7eb', borderRadius: '10px',
-              padding: '9px 13px', fontSize: '13px', fontFamily: 'DM Sans, sans-serif',
-              color: '#1a1a2e', background: '#f9fafb', outline: 'none',
-              transition: 'border-color .15s',
+              flex: 1,
+              border: `1.5px solid ${DESIGN.colors.border}`,
+              borderRadius: DESIGN.radius.sm,
+              padding: `${DESIGN.spacing.sm} ${DESIGN.spacing.md}`,
+              fontSize: DESIGN.fonts.base,
+              fontFamily: 'DM Sans, sans-serif',
+              color: DESIGN.colors.text.primary,
+              background: DESIGN.colors.white,
+              outline: 'none',
+              transition: `all ${DESIGN.transitions.fast}`,
             }}
           />
           <button
             onClick={() => sendMessage()}
             disabled={loading || !input.trim()}
             style={{
-              width: '36px', height: '36px',
-              background: loading || !input.trim() ? '#e5e7eb' : '#8c30f5',
-              border: 'none', borderRadius: '10px',
-              color: loading || !input.trim() ? '#9ca3af' : 'white',
-              fontSize: '16px', cursor: loading || !input.trim() ? 'not-allowed' : 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0, transition: 'background .15s',
+              width: '36px',
+              height: '36px',
+              background: loading || !input.trim() ? DESIGN.colors.border : DESIGN.colors.primary,
+              border: 'none',
+              borderRadius: DESIGN.radius.sm,
+              color: loading || !input.trim() ? DESIGN.colors.text.tertiary : DESIGN.colors.white,
+              fontSize: DESIGN.fonts.base,
+              cursor: loading || !input.trim() ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              transition: `all ${DESIGN.transitions.fast}`,
             }}
-          >↑</button>
+            onMouseEnter={e => {
+              if (!loading && input.trim()) {
+                (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1.05)'
+              }
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1)'
+            }}
+          >
+            <SendIcon />
+          </button>
         </div>
       </div>
     </>
