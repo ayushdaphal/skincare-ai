@@ -137,9 +137,9 @@ export default function App() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#c9d1d9', fontSize: '14px' }}>
                 <svg viewBox="0 0 16 16" width="16" height="16" fill="#8b949e"><path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 1 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1V9h-8c-.356 0-.694.074-1 .208V2.5a1 1 0 0 1 1-1Zm0 9v1.5h-1.75V10.5Z"></path></svg>
-                <span style={{ color: '#58a6ff', cursor: 'pointer' }}>ayushdaphal</span>
+                <span onClick={() => window.open('https://github.com/ayushdaphal/skincare-ai', '_blank')} style={{ color: '#58a6ff', cursor: 'pointer' }}>ayushdaphal</span>
                 <span style={{ color: '#8b949e' }}>/</span>
-                <span style={{ fontWeight: 600, color: '#c9d1d9', cursor: 'pointer' }}>skincare-ai</span>
+                <span onClick={() => window.open('https://github.com/ayushdaphal/skincare-ai', '_blank')} style={{ fontWeight: 600, color: '#c9d1d9', cursor: 'pointer' }}>skincare-ai</span>
                 <span style={{ fontSize: '12px', border: '1px solid #30363d', borderRadius: '20px', padding: '0 7px', color: '#8b949e', fontWeight: 500 }}>Public</span>
               </div>
               
@@ -188,15 +188,15 @@ export default function App() {
             
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{ background: '#21262d', border: '1px solid #30363d', borderRadius: '6px', padding: '5px 12px', fontSize: '13px', color: '#c9d1d9', fontWeight: 600 }}>
+                <div style={{ background: '#21262d', border: '1px solid #30363d', borderRadius: '6px', padding: '5px 12px', fontSize: '13px', color: '#c9d1d9', fontWeight: 600, cursor: 'pointer' }} onClick={() => window.open('https://github.com/ayushdaphal/skincare-ai', '_blank')}>
                   <svg viewBox="0 0 16 16" width="14" height="14" fill="#8b949e" style={{ marginRight: '4px', verticalAlign: 'text-bottom' }}><path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177a.75.75 0 0 1 1.06 0l3 3a.75.75 0 0 1 0 1.06l-3 3a.75.75 0 1 1-1.06-1.06L9.44 7.25H6.75a.75.75 0 0 1 0-1.5h2.69l-2.263-2.263a.75.75 0 0 1 0-1.06ZM2.5 2a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 10.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z"></path></svg>
                   <span>main</span>
                 </div>
                 <div style={{ fontSize: '13px', color: '#8b949e' }}><strong>1</strong> Branch &nbsp; <strong>0</strong> Tags</div>
               </div>
               <div style={{ display: 'flex', gap: '6px' }}>
-                <div style={{ background: '#21262d', border: '1px solid #30363d', borderRadius: '6px', padding: '5px 12px', fontSize: '13px', color: '#c9d1d9' }}>Go to file</div>
-                <div style={{ background: '#238636', border: '1px solid rgba(240,246,252,0.1)', borderRadius: '6px', padding: '5px 12px', fontSize: '13px', color: '#fff', fontWeight: 600 }}>Code ▼</div>
+                <div onClick={() => window.open('https://github.com/ayushdaphal/skincare-ai', '_blank')} style={{ background: '#21262d', border: '1px solid #30363d', borderRadius: '6px', padding: '5px 12px', fontSize: '13px', color: '#c9d1d9', cursor: 'pointer' }}>Go to file</div>
+                <div onClick={() => window.open('https://github.com/ayushdaphal/skincare-ai', '_blank')} style={{ background: '#238636', border: '1px solid rgba(240,246,252,0.1)', borderRadius: '6px', padding: '5px 12px', fontSize: '13px', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>Code ▼</div>
               </div>
             </div>
 
@@ -206,7 +206,7 @@ export default function App() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <div style={{ width: '24px', height: '24px', background: '#8c30f5', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '10px', color: '#fff' }}>AD</div>
                   <div>
-                    <span style={{ fontWeight: 600, color: '#c9d1d9' }}>ayushdaphal</span>
+                    <span onClick={() => window.open('https://github.com/ayushdaphal/skincare-ai', '_blank')} style={{ fontWeight: 600, color: '#c9d1d9', cursor: 'pointer' }}>ayushdaphal</span>
                     <span style={{ color: '#8b949e', marginLeft: '8px' }}>update- re-ordered pipeline whitepaper nodes to sequence logic specifications</span>
                   </div>
                 </div>
@@ -495,7 +495,7 @@ export default function App() {
                   <div style={{ fontWeight: 600, color: '#c9d1d9', marginBottom: '8px' }}>Contributors</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <div style={{ width: '20px', height: '20px', background: '#8c30f5', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: '9px', color: '#fff' }}>AD</div>
-                    <span style={{ color: '#58a6ff', fontWeight: 500 }}>ayushdaphal</span>
+                    <span onClick={() => window.open('https://github.com/ayushdaphal/skincare-ai', '_blank')} style={{ color: '#58a6ff', fontWeight: 500, cursor: 'pointer' }}>ayushdaphal</span>
                   </div>
                 </div>
               </div>
