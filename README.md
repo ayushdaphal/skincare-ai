@@ -26,7 +26,8 @@ An intelligent, full-stack agentic AI system designed to act as a virtual dermat
 ---
 
 ## Links to document and video demo
-Doc : https://drive.google.com/file/d/1CtqGtM41hlaqFFB-QGFz2EaObc6FlbJv/view?usp=drive_link
+* **Document** : https://drive.google.com/file/d/1CtqGtM41hlaqFFB-QGFz2EaObc6FlbJv/view?usp=drive_link
+* **Video demo** : 
 Video Demo :
 
 ---
