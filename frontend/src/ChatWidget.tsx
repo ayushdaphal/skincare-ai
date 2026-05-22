@@ -167,7 +167,6 @@ export default function ChatWidget({ onToggleStateChange }: ChatWidgetProps) {
   const [showSuggestions, setShowSuggestions] = useState(true)
   const [streamingContent, setStreamingContent] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
-  
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const sessionId = useRef(getSessionId())
@@ -197,66 +196,90 @@ export default function ChatWidget({ onToggleStateChange }: ChatWidgetProps) {
     setMessages(prev => [...prev, { role: 'user', content: msg, time: getTime() }])
 
     try {
-      const evtSource = new EventSource(
+      const response = await fetch(
         `${API_URL}/chat/stream?message=${encodeURIComponent(msg)}&session_id=${encodeURIComponent(sessionId.current)}`
       )
 
+      if (!response.ok) throw new Error('Stream request failed')
+
+      const reader = response.body?.getReader()
+      if (!reader) throw new Error('No response body')
+
+      const decoder = new TextDecoder()
       let fullContent = ''
+      let buffer = ''
+      const tokenQueue: Array<{token?: string; done?: boolean; source?: string; products?: any}> = []
 
-      evtSource.onmessage = (e) => {
-        const data = JSON.parse(e.data)
+      // Read all data first
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
 
-        if (data.done) {
-          evtSource.close()
-          setIsStreaming(false)
-          setStreamingContent('')
-          setLoading(false)
-          setMessages(prev => [...prev, {
-            role: 'bot',
-            content: fullContent,
-            source: data.source,
-            products: data.products || [],
-            time: getTime(),
-          }])
-        } else if (data.token) {
-          fullContent += data.token
-          setStreamingContent(fullContent)
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+
+        for (let i = 0; i < lines.length - 1; i++) {
+          const line = lines[i]
+          if (line.startsWith('data: ')) {
+            const jsonStr = line.slice(6)
+            try {
+              const data = JSON.parse(jsonStr)
+              tokenQueue.push(data)
+            } catch (e) {
+              console.warn('[PARSE ERROR]', e, jsonStr)
+            }
+          }
+        }
+        buffer = lines[lines.length - 1]
+      }
+
+      // Process remaining buffer
+      if (buffer.startsWith('data: ')) {
+        const jsonStr = buffer.slice(6)
+        try {
+          const data = JSON.parse(jsonStr)
+          tokenQueue.push(data)
+        } catch (e) {
+          console.warn('[PARSE ERROR]', e, buffer)
         }
       }
 
-      evtSource.onerror = () => {
-        evtSource.close()
-        setIsStreaming(false)
-        setStreamingContent('')
-
-        fetch(`${API_URL}/chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: msg, session_id: sessionId.current })
-        })
-          .then(r => r.json())
-          .then(data => {
-            setLoading(false)
-            setMessages(prev => [...prev, {
-              role: 'bot',
-              content: data.reply,
-              source: data.source,
-              products: data.products || [],
-              time: getTime(),
-            }])
-          })
-          .catch(() => {
-            setLoading(false)
-            setMessages(prev => [...prev, {
-              role: 'bot',
-              content: 'Sorry, something went wrong. Please try again.',
-              time: getTime(),
-            }])
-          })
+      // Process tokens with delay for smooth animation
+      let finalMetadata = { source: '', products: [] }
+      for (const item of tokenQueue) {
+        if (item.token) {
+          fullContent += item.token
+          setStreamingContent(fullContent)
+          // Slower animation delay - 60ms between tokens
+          await new Promise(resolve => setTimeout(resolve, 60))
+        } else if (item.done) {
+          finalMetadata = {
+            source: item.source,
+            products: item.products || []
+          }
+        }
       }
-    } catch {
-      setLoading(false)
+
       setIsStreaming(false)
+      setStreamingContent('')
+      setLoading(false)
+      setMessages(prev => [...prev, {
+        role: 'bot',
+        content: fullContent,
+        source: finalMetadata.source,
+        products: finalMetadata.products,
+        time: getTime(),
+      }])
+    } catch (error) {
+      console.error('[STREAM ERROR]', error)
+      setIsStreaming(false)
+      setStreamingContent('')
+      setLoading(false)
+      setMessages(prev => [...prev, {
+        role: 'bot',
+        content: 'Sorry, something went wrong with the stream. Please try again.',
+        time: getTime(),
+      }])
     }
   }
 
@@ -298,6 +321,18 @@ export default function ChatWidget({ onToggleStateChange }: ChatWidgetProps) {
         .card-hover:hover { box-shadow: 0 8px 20px rgba(0,0,0,0.12) !important; transform: translateY(-2px); }
         .chip-hover:hover { background: ${DESIGN.colors.primary} !important; color: white !important; border-color: ${DESIGN.colors.primary} !important; }
         .input-focus:focus { border-color: ${DESIGN.colors.primary} !important; box-shadow: ${DESIGN.shadows.focus} !important; background: white !important; }
+        @keyframes typing-dots {
+          0%, 60%, 100% { opacity: 0.5; }
+          30% { opacity: 1; }
+        }
+        .typing-dot:nth-child(1) { animation: typing-dots 1.4s ease-in-out infinite; }
+        .typing-dot:nth-child(2) { animation: typing-dots 1.4s ease-in-out 0.2s infinite; }
+        .typing-dot:nth-child(3) { animation: typing-dots 1.4s ease-in-out 0.4s infinite; }
+        @keyframes pulse-spinner {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+        .pulse-loader { animation: pulse-spinner 1.5s ease-in-out infinite; }
       `}</style>
 
       {/* Floating activation button */}
@@ -388,11 +423,28 @@ export default function ChatWidget({ onToggleStateChange }: ChatWidgetProps) {
             </div>
           ))}
 
-          {/* Token Generation Content Stream Canvas */}
-          {isStreaming && streamingContent && (
+          {/* Token Generation Content Stream Canvas with Loader */}
+          {isStreaming && (
             <div style={{ display: 'flex', gap: DESIGN.spacing.md, alignItems: 'flex-end' }}>
               <div style={{ width: '28px', height: '28px', background: DESIGN.colors.primary, borderRadius: DESIGN.radius.md, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: DESIGN.fonts.lg, flexShrink: 0, color: DESIGN.colors.white }}><BotIcon /></div>
-              <div style={{ maxWidth: '75%', padding: `${DESIGN.spacing.md} ${DESIGN.spacing.lg}`, borderRadius: `${DESIGN.radius.md} ${DESIGN.radius.md} ${DESIGN.radius.md} ${DESIGN.radius.sm}`, background: DESIGN.colors.white, color: DESIGN.colors.text.primary, fontSize: DESIGN.fonts.base, lineHeight: 1.5, boxShadow: DESIGN.shadows.sm, border: `1px solid ${DESIGN.colors.border}`, whiteSpace: 'pre-wrap' }}>{streamingContent}</div>
+              <div style={{ maxWidth: '75%', padding: `${DESIGN.spacing.md} ${DESIGN.spacing.lg}`, borderRadius: `${DESIGN.radius.md} ${DESIGN.radius.md} ${DESIGN.radius.md} ${DESIGN.radius.sm}`, background: DESIGN.colors.white, color: DESIGN.colors.text.primary, fontSize: DESIGN.fonts.base, lineHeight: 1.5, boxShadow: DESIGN.shadows.sm, border: `1px solid ${DESIGN.colors.border}`, whiteSpace: 'pre-wrap', minHeight: '44px', display: 'flex', alignItems: 'center' }}>
+                {streamingContent ? (
+                  streamingContent.split('\n').map((line, li) => {
+                    const parts = line.split(/\*\*(.*?)\*\*/g)
+                    return (
+                      <div key={li} style={{ marginBottom: line === '' ? DESIGN.spacing.sm : '0' }}>
+                        {parts.map((part, pi) => pi % 2 === 1 ? <strong key={pi} style={{ fontWeight: 600 }}>{part}</strong> : part)}
+                      </div>
+                    )
+                  })
+                ) : (
+                  <div className="pulse-loader" style={{ display: 'flex', gap: '4px', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
+                    <span className="typing-dot" style={{ width: '8px', height: '8px', background: DESIGN.colors.primary, borderRadius: '50%', display: 'inline-block' }} />
+                    <span className="typing-dot" style={{ width: '8px', height: '8px', background: DESIGN.colors.primary, borderRadius: '50%', display: 'inline-block' }} />
+                    <span className="typing-dot" style={{ width: '8px', height: '8px', background: DESIGN.colors.primary, borderRadius: '50%', display: 'inline-block' }} />
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
