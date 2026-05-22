@@ -86,10 +86,32 @@ FILLER_PHRASES = {
     'right', 'exactly', 'indeed', 'agreed', 'ok cool', 'ok sure'
 }
 
+import time  # For exponential backoff delays
+import random
+
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 async_client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
 MODEL = "llama-3.1-8b-instant"
 ROUTER_MODEL = "llama-3.1-8b-instant"
+
+def retry_with_backoff(func, *args, max_retries=3, initial_delay=1, **kwargs):
+    """
+    Executes a sync function with exponential backoff and randomized jitter
+    to handle transient network drops or 429/502 API constraints gracefully.
+    """
+    delay = initial_delay
+    for attempt in range(max_retries):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise e  # Re-throw on final exhaust to let local fallbacks trigger
+            # Apply exponential backoff with +/- 10% randomized jitter bounds
+            jitter = random.uniform(-0.1, 0.1) * delay
+            sleep_time = max(0.1, delay + jitter)
+            print(f"[RETRY WARNING] Attempt {attempt + 1} failed: {e}. Retrying in {sleep_time:.2f}s...")
+            time.sleep(sleep_time)
+            delay *= 2
 
 SYSTEM_PROMPT = """You are a skincare and haircare assistant for Clinikally, an Indian skincare platform.
 
@@ -330,14 +352,33 @@ def run_agent(user_message: str, history: list = None) -> dict:
 
     all_results, tools_used = {}, []
     if "product" in sources:
-        all_results["products"] = search_products(contextual_query, max_price=max_price)
-        tools_used.append("search_products")
+        print(f"[TOOL CALL] search_products(query={contextual_query!r}, max_price={max_price})")
+        try:
+            # Wrapped in retry backoff bounds before shifting to dynamic downgrades
+            result = retry_with_backoff(search_products, contextual_query, max_price=max_price)
+            all_results["products"] = result
+            tools_used.append("search_products")
+        except Exception as e:
+            print(f"[GRACEFUL DEGRADATION] search_products failed completely: {e}. Isolation active.")
+            all_results["products"] = {"results": []}  # Safe empty fallback template structure
     if "blog" in sources:
-        all_results["blogs"] = search_blogs(contextual_query)
-        tools_used.append("search_blogs")
+        print(f"[TOOL CALL] search_blogs(query={contextual_query!r})")
+        try:
+            result = retry_with_backoff(search_blogs, contextual_query)
+            all_results["blogs"] = result
+            tools_used.append("search_blogs")
+        except Exception as e:
+            print(f"[GRACEFUL DEGRADATION] search_blogs failed completely: {e}. Isolation active.")
+            all_results["blogs"] = {"results": []}
     if "web" in sources:
-        all_results["web"] = web_search(contextual_query)
-        tools_used.append("web_search")
+        print(f"[TOOL CALL] web_search(query={contextual_query!r})")
+        try:
+            result = retry_with_backoff(web_search, contextual_query)
+            all_results["web"] = result
+            tools_used.append("web_search")
+        except Exception as e:
+            print(f"[GRACEFUL DEGRADATION] web_search failed completely: {e}. Isolation active.")
+            all_results["web"] = {"results": []}
 
     source_label = "mixed" if len(tools_used) > 1 else (tools_used[0].replace("search_", "").replace("_search", "") if tools_used else "unknown")
 
@@ -415,14 +456,28 @@ async def run_agent_stream(user_message: str, history: list = None):
 
             all_results, tools_used = {}, []
             if "product" in sources:
-                all_results["products"] = search_products(contextual_query, max_price=max_price)
-                tools_used.append("search_products")
+                try:
+                    all_results["products"] = retry_with_backoff(search_products, contextual_query, max_price=max_price)
+                    tools_used.append("search_products")
+                except Exception as e:
+                    print(f"[STREAM DEGRADATION] search_products failed: {e}")
+                    all_results["products"] = {"results": []}
+
             if "blog" in sources:
-                all_results["blogs"] = search_blogs(contextual_query)
-                tools_used.append("search_blogs")
+                try:
+                    all_results["blogs"] = retry_with_backoff(search_blogs, contextual_query)
+                    tools_used.append("search_blogs")
+                except Exception as e:
+                    print(f"[STREAM DEGRADATION] search_blogs failed: {e}")
+                    all_results["blogs"] = {"results": []}
+
             if "web" in sources:
-                all_results["web"] = web_search(contextual_query)
-                tools_used.append("web_search")
+                try:
+                    all_results["web"] = retry_with_backoff(web_search, contextual_query)
+                    tools_used.append("web_search")
+                except Exception as e:
+                    print(f"[STREAM DEGRADATION] web_search failed: {e}")
+                    all_results["web"] = {"results": []}    
 
             source_label = "mixed" if len(tools_used) > 1 else (tools_used[0].replace("search_", "").replace("_search", "") if tools_used else "unknown")
 

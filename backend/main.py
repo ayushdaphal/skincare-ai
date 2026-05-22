@@ -64,23 +64,36 @@ async def chat_stream(message: str, session_id: str):
         raise HTTPException(status_code=400, detail="Message cannot be empty")
 
     async def generate():
-        history = load_history(session_id)
+        try:
+            history = load_history(session_id)
 
-        # Consumes token bits natively over the generator line without slicing delays
-        async for chunk in run_agent_stream(message, history=history):
-            if chunk["type"] == "token":
-                # Immediately pass raw token chunks forward into the frontend stream canvas
-                data = json.dumps({'token': chunk['content']})
-                yield f"data: {data}\n\n"
-                # Ensure tokens are flushed immediately
-                await asyncio.sleep(0)
-            elif chunk["type"] == "metadata":
-                # Save transaction securely to memory history at the absolute end of generation
-                append_turn(session_id, message, chunk["reply"])
-                
-                # Push execution state vectors for layout structures
-                data = json.dumps({'done': True, 'source': chunk['source'], 'tools_used': chunk['tools_used'], 'products': chunk['products']})
-                yield f"data: {data}\n\n"
+            # Consumes token bits natively over the generator line without slicing delays
+            async for chunk in run_agent_stream(message, history=history):
+                if chunk["type"] == "token":
+                    # Immediately pass raw token chunks forward into the frontend stream canvas
+                    data = json.dumps({'token': chunk['content']})
+                    yield f"data: {data}\n\n"
+                    # Ensure tokens are flushed immediately
+                    await asyncio.sleep(0)
+                elif chunk["type"] == "metadata":
+                    # Save transaction securely to memory history at the absolute end of generation
+                    append_turn(session_id, message, chunk["reply"])
+                    
+                    # Push execution state vectors for layout structures
+                    data = json.dumps({'done': True, 'source': chunk['source'], 'tools_used': chunk['tools_used'], 'products': chunk['products']})
+                    yield f"data: {data}\n\n"
+        
+        except Exception as server_error:
+            # Captures global pipeline failures (e.g., database locks, total network dropouts)
+            print(f"[CRITICAL ENDPOINT FAILURE] Stream severed: {server_error}")
+            
+            # Emit a structured error event payload down the active socket connection channel
+            error_packet = {
+                "error": True,
+                "type": "SERVER_PIPELINE_DEGRADED",
+                "message": "We encountered minor engine friction, re-routing optimization paths..."
+            }
+            yield f"data: {json.dumps(error_packet)}\n\n"
 
     return StreamingResponse(
         generate(),

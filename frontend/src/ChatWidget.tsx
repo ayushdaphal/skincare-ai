@@ -96,6 +96,13 @@ const CloseIcon = () => (
   </svg>
 )
 
+const ResetIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+    <path d="M3 3v5h5" />
+  </svg>
+)
+
 const OnlineIndicator = () => (
   <div style={{ width: '6px', height: '6px', background: DESIGN.colors.success, borderRadius: DESIGN.radius.full, display: 'inline-block' }} />
 )
@@ -183,6 +190,31 @@ export default function ChatWidget({ onToggleStateChange }: ChatWidgetProps) {
     }
   }, [isOpen])
 
+  const clearSessionOnBackend = async () => {
+    if (loading) return
+    setLoading(true)
+    try {
+      await fetch(`${API_URL}/chat/clear`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId.current })
+      })
+
+      setMessages([
+        { role: 'bot', content: 'Hi! I\'m your AI Dermat.\n\nI can help you find the right skincare products, explain ingredients, and answer any skin concerns. What\'s on your mind?', time: getTime() }
+      ])
+      setInput('')
+      setStreamingContent('')
+      setIsStreaming(false)
+      setShowSuggestions(true)
+    } catch (error) {
+      console.error('Failed to clear backend session:', error)
+    } finally {
+      setLoading(false)
+      setTimeout(() => inputRef.current?.focus(), 100)
+    }
+  }
+
   const sendMessage = async (text?: string) => {
     const msg = (text || input).trim()
     if (!msg || loading) return
@@ -208,7 +240,7 @@ export default function ChatWidget({ onToggleStateChange }: ChatWidgetProps) {
       const decoder = new TextDecoder()
       let fullContent = ''
       let buffer = ''
-      const tokenQueue: Array<{token?: string; done?: boolean; source?: string; products?: any}> = []
+      const tokenQueue: Array<{token?: string; done?: boolean; source?: string; products?: any; error?: boolean; message?: string}> = []
 
       // Read all data first
       while (true) {
@@ -246,11 +278,19 @@ export default function ChatWidget({ onToggleStateChange }: ChatWidgetProps) {
 
       // Process tokens with delay for smooth animation
       let finalMetadata = { source: '', products: [] }
+      let unrecoverableErrorDetected = false
+      let customServerErrorMessage = ''
+
       for (const item of tokenQueue) {
+        if (item.error) {
+          unrecoverableErrorDetected = true
+          customServerErrorMessage = item.message || 'We encountered an engine anomaly.'
+          break
+        }
+
         if (item.token) {
           fullContent += item.token
           setStreamingContent(fullContent)
-          // Slower animation delay - 60ms between tokens
           await new Promise(resolve => setTimeout(resolve, 60))
         } else if (item.done) {
           finalMetadata = {
@@ -258,6 +298,20 @@ export default function ChatWidget({ onToggleStateChange }: ChatWidgetProps) {
             products: item.products || []
           }
         }
+      }
+
+      if (unrecoverableErrorDetected) {
+        setIsStreaming(false)
+        setStreamingContent('')
+        setLoading(false)
+        setMessages(prev => [...prev, {
+          role: 'bot',
+          content: `⚠️ **System Update:** ${customServerErrorMessage}`,
+          source: 'web',
+          products: [],
+          time: getTime(),
+        }])
+        return
       }
 
       setIsStreaming(false)
@@ -286,7 +340,7 @@ export default function ChatWidget({ onToggleStateChange }: ChatWidgetProps) {
   const buttonBottom = isMobile ? '20px' : '28px'
   const buttonLeft = isMobile ? '16px' : '28px'
   const windowBottom = isMobile ? '80px' : '100px'
-  const windowWidth = isMobile ? 'calc(100vw - 32px)' : '380px' // Retains standard layout width parameters
+  const windowWidth = isMobile ? 'calc(100vw - 32px)' : '380px'
   const windowHeight = isMobile ? 'calc(100vh - 120px)' : '620px'
 
   return (
@@ -342,7 +396,7 @@ export default function ChatWidget({ onToggleStateChange }: ChatWidgetProps) {
           onClick={() => {
             const nextState = !isOpen;
             setIsOpen(nextState);
-            if (onToggleStateChange) onToggleStateChange(nextState); // Dispatches layout blur updates upwards
+            if (onToggleStateChange) onToggleStateChange(nextState);
           }}
           style={{
             display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', background: DESIGN.colors.primary, color: DESIGN.colors.white, border: 'none', borderRadius: DESIGN.radius.sm, padding: `${DESIGN.spacing.sm} ${DESIGN.spacing.md}`, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontSize: '11px', fontWeight: 600, boxShadow: DESIGN.shadows.button, position: 'relative', transition: `all ${DESIGN.transitions.base}`
@@ -371,7 +425,18 @@ export default function ChatWidget({ onToggleStateChange }: ChatWidgetProps) {
             <div style={{ fontSize: DESIGN.fonts.lg, fontWeight: 600, color: DESIGN.colors.white }}>Your AI Dermat</div>
             <div style={{ fontSize: DESIGN.fonts.sm, color: 'rgba(255,255,255,0.75)', display: 'flex', alignItems: 'center', gap: DESIGN.spacing.xs, marginTop: '2px' }}><OnlineIndicator /><span>Online</span></div>
           </div>
-          <button onClick={() => { setIsOpen(false); if(onToggleStateChange) onToggleStateChange(false); }} style={{ width: '32px', height: '32px', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: DESIGN.radius.sm, color: DESIGN.colors.white, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}><CloseIcon /></button>
+          
+          <div style={{ display: 'flex', gap: DESIGN.spacing.sm, alignItems: 'center' }}>
+            <button 
+              onClick={clearSessionOnBackend} 
+              title="Reset Conversation"
+              disabled={loading}
+              style={{ width: '32px', height: '32px', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: DESIGN.radius.sm, color: DESIGN.colors.white, cursor: loading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, transition: `all ${DESIGN.transitions.fast}` }}
+            >
+              <ResetIcon />
+            </button>
+            <button onClick={() => { setIsOpen(false); if(onToggleStateChange) onToggleStateChange(false); }} style={{ width: '32px', height: '32px', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: DESIGN.radius.sm, color: DESIGN.colors.white, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}><CloseIcon /></button>
+          </div>
         </div>
 
         {/* Message Thread Area */}
