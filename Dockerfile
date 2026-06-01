@@ -25,4 +25,4 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PORT=8000
 
 # Run the application with PORT from environment
-CMD ["sh", "-c", "python -m uvicorn main:app --host 0.0.0.0 --port $PORT --workers 4 --chdir backend"]
+CMD ["sh", "-c", "python -m uvicorn main:app --host 0.0.0.0 --port $PORT --workers 4 --app-dir backend"]
