@@ -1,0 +1,15 @@
+.git
+.gitignore
+.env
+venv/
+frontend/node_modules/
+frontend/dist/
+*.pyc
+__pycache__/
+.DS_Store
+.vscode/
+.idea/
+embed/chroma_persistent_storage/
+backend/data/blog_bm25.pkl
+backend/data/product_bm25.pkl
+embed/data/blogs/
