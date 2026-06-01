@@ -1,1 +1,1 @@
-web: /opt/venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port $PORT --workers 4 --chdir backend
+web: /opt/venv/bin/python run.py
