@@ -1,5 +1,6 @@
 FROM python:3.13-slim
 
+# Set working directory
 WORKDIR /app
 
 # Install system dependencies
@@ -16,13 +17,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application
 COPY . .
 
-# Expose port (Railway sets PORT env var at runtime)
-EXPOSE 8000
-
-# Set environment to use the installed packages
+# Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PORT=8000
+ENV PYTHONPATH=/app:/app/backend
 
-# Run the application with PORT from environment
-CMD ["sh", "-c", "python -m uvicorn main:app --host 0.0.0.0 --port $PORT --workers 4 --app-dir backend"]
+# Expose port
+EXPOSE 8000
+
+# Run the application - change to backend and run uvicorn from there
+CMD ["sh", "-c", "cd backend && python -m uvicorn main:app --host 0.0.0.0 --port $PORT --workers 4"]
