@@ -11,8 +11,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies with verbose output
+RUN pip install --no-cache-dir -r requirements.txt && \
+    python -c "from groq import Groq; print('✓ groq installed successfully')" && \
+    python -c "import chromadb; print('✓ chromadb installed successfully')" && \
+    python -c "import uvicorn; print('✓ uvicorn installed successfully')"
 
 # Copy the rest of the application
 COPY . .
