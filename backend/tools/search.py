@@ -256,6 +256,26 @@ def web_search(query: str) -> dict:
                 "url": r.get("url", ""),
                 "content": r.get("content", "")[:500]
             }
+            for r in response.get("results", [])
+        ]
+        result = {"source": "web", "results": results}
+    except Exception as e:
+        result = {"source": "web", "results": [], "error": str(e)}
+
+    _store_cache(emb, result)
+    return result
+    cached, emb = _check_cache(f"web:{query}")
+    if cached:
+        return cached
+
+    try:
+        response = tavily.search(query=query, max_results=3)
+        results = [
+            {
+                "title": r.get("title", ""),
+                "url": r.get("url", ""),
+                "content": r.get("content", "")[:500]
+            }
             {
                 "title": r.get("title", ""),
                 "url": r.get("url", ""),
