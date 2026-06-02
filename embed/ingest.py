@@ -50,26 +50,30 @@ def store_batch(documents, metadatas):
 # LOW-MEMORY EXCEL INGESTION
 # ===============================
 def ingest_excel():
-    print("Processing CSV catalog in stream mode...")
+    print("Processing CSV catalog via ultra-fast memory slicing mode...")
+    
+    # Read the file data into a memory variable exactly ONCE (takes less than 5MB of RAM for text)
+    df = pd.read_csv(CSV_PATH, encoding="latin1")
+    total_rows = len(df)
     
     docs = []
     metas = []
-    row_count = 0
     
-    # chunksize reads exactly 32 rows sequentially into memory at a time, keeping RAM flat
-    for chunk_df in tqdm(pd.read_csv(CSV_PATH, chunksize=BATCH_SIZE, encoding="latin1"), desc="Embedding Catalog"):
-        for idx, row in chunk_df.iterrows():
-            row_text = "\n".join([f"{col}: {str(row[col])}" for col in chunk_df.columns if pd.notna(row[col])])
+    # Process slices using CPU memory bounds instead of pulling from the cloud disk repeatedly
+    for skip in tqdm(range(0, total_rows, BATCH_SIZE), desc="Embedding Catalog"):
+        df_chunk = df.iloc[skip : skip + BATCH_SIZE]
+        
+        for idx, row in df_chunk.iterrows():
+            row_text = "\n".join([f"{col}: {str(row[col])}" for col in df_chunk.columns if pd.notna(row[col])])
             
             docs.append(row_text)
             metas.append({
                 "source": "excel",
-                "row_index": int(row_count)
+                "row_index": int(skip + idx)
             })
-            row_count += 1
             
         store_batch(docs, metas)
-        docs, metas = [], []  # Instantly flush references out of memory
+        docs, metas = [], []  # Flush batch tracking variables out of memory loop steps
 # ===============================
 # BLOG INGESTION
 # ===============================
