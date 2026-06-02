@@ -12,6 +12,7 @@ from sentence_transformers import SentenceTransformer
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 EXCEL_PATH = os.path.join(BASE_DIR, "data", "knowledge.xlsx")
 BLOGS_DIR = os.path.join(BASE_DIR, "data", "blogs")
+CSV_PATH = os.path.join(BASE_DIR, "data", "knowledge.csv")
 
 # Use absolute paths or fallback to system configuration
 CHROMA_PATH = os.getenv("CHROMA_SERVER_PATH", os.path.join(BASE_DIR, "chroma_persistent_storage"))
@@ -49,30 +50,26 @@ def store_batch(documents, metadatas):
 # LOW-MEMORY EXCEL INGESTION
 # ===============================
 def ingest_excel():
-    print("Processing Excel in low-memory chunk modes...")
-    
-    # Check total row count smoothly without loading values
-    total_rows = len(pd.read_excel(EXCEL_PATH, usecols=[0]))
+    print("Processing CSV catalog in stream mode...")
     
     docs = []
     metas = []
+    row_count = 0
     
-    # Process the spreadsheet in chunks of 32 rows to stay well under the 512MB RAM cap
-    for skip in tqdm(range(0, total_rows, BATCH_SIZE), desc="Embedding Catalog"):
-        df_chunk = pd.read_excel(EXCEL_PATH, skiprows=range(1, skip + 1) if skip > 0 else None, nrows=BATCH_SIZE)
-        
-        for idx, row in df_chunk.iterrows():
-            row_text = "\n".join([f"{col}: {str(row[col])}" for col in df_chunk.columns if pd.notna(row[col])])
+    # chunksize reads exactly 32 rows sequentially into memory at a time, keeping RAM flat
+    for chunk_df in tqdm(pd.read_csv(CSV_PATH, chunksize=BATCH_SIZE), desc="Embedding Catalog"):
+        for idx, row in chunk_df.iterrows():
+            row_text = "\n".join([f"{col}: {str(row[col])}" for col in chunk_df.columns if pd.notna(row[col])])
             
             docs.append(row_text)
             metas.append({
                 "source": "excel",
-                "row_index": int(skip + idx)
+                "row_index": int(row_count)
             })
+            row_count += 1
             
         store_batch(docs, metas)
-        docs, metas = [], []  # Force clear arrays from memory instantly
-
+        docs, metas = [], []  # Instantly flush references out of memory
 # ===============================
 # BLOG INGESTION
 # ===============================
