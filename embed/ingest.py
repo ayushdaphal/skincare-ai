@@ -9,9 +9,14 @@ from sentence_transformers import SentenceTransformer
 # ===============================
 # CONFIG
 # ===============================
-BASE_DIR = "data"
-EXCEL_PATH = os.path.join(BASE_DIR, "knowledge.xlsx")
-BLOGS_DIR = os.path.join(BASE_DIR, "blogs")
+# Absolute directory containing this script (e.g., /app/embed)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Securely resolves to /app/embed/data/knowledge.xlsx on the cloud
+EXCEL_PATH = os.path.join(BASE_DIR, "data", "knowledge.xlsx")
+
+# Securely resolves to /app/embed/data/blogs
+BLOGS_DIR = os.path.join(BASE_DIR, "data", "blogs")
 
 CHROMA_PATH = "./chroma_persistent_storage"
 COLLECTION_NAME = "knowledge_base"
