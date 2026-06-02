@@ -34,4 +34,5 @@ EXPOSE 8000
 
 
 # Start Uvicorn directly from the root workspace folder, maintaining full environment variables scope
-CMD ["sh", "-c", "python embed/ingest.py && python backend/build_bm25.py && uvicorn backend.main:app --host 0.0.0.0 --port 8000"]
+# No more processing strings — just boot up the listening server instantly!
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -2,42 +2,28 @@ import sys
 import os
 import json
 import asyncio
-from fastapi import FastAPI, HTTPException
+import subprocess
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-print("\n" + "="*50)
-print("[DUMPING AVAILABLE ENVIRONMENT KEYS IN PRODUCTION]")
-print(list(os.environ.keys()))
-print(f"PORT variable found: {os.getenv('PORT')}")
-print(f"GROQ_API_KEY exists directly: {'GROQ_API_KEY' in os.environ}")
-print("="*50 + "\n")
-# Force root directory into path so imports like 'agent' and 'memory' resolve smoothly in Docker
+
+# Force root directory into path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from dotenv import load_dotenv
-# Look for .env file at the root directory level
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env"))
-
-from agent import run_agent, run_agent_stream  
-from memory import load_history, append_turn, clear_session
 
 app = FastAPI(title="Skincare AI API")
 
 # ── PRODUCTION CORS CONFIGURATION ──
-# Read your deployed frontend URL from environment variables; fallback to local Vite dev server
 FRONTEND_URL = os.getenv("FRONTEND_PRODUCTION_URL", "http://localhost:5173")
-
-origins = [
-    "http://localhost:5173",
-    "http://localhost:3000",
-    FRONTEND_URL
-]
+origins = ["http://localhost:5173", "http://localhost:3000", FRONTEND_URL]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=True, # Critical for secure session handshakes
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -61,37 +47,44 @@ def health():
 def chat(req: ChatRequest):
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty")
+    
+    # Lazy import inside the function so it doesn't crash if files are missing on boot
+    from agent import run_agent
+    from memory import load_history, append_turn
 
-    history = load_history(req.session_id)
-    result = run_agent(req.message, history=history)
-    append_turn(req.session_id, req.message, result["reply"])
+    try:
+        history = load_history(req.session_id)
+        result = run_agent(req.message, history=history)
+        append_turn(req.session_id, req.message, result["reply"])
+        return {
+            "reply": result["reply"],
+            "source": result["source"],
+            "tools_used": result["tools_used"],
+            "products": result.get("products", []),
+            "session_id": req.session_id,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database or index not initialized yet. Please seed the volume. Error: {str(e)}")
 
-    return {
-        "reply": result["reply"],
-        "source": result["source"],
-        "tools_used": result["tools_used"],
-        "products": result.get("products", []),
-        "session_id": req.session_id,
-    }
-
-# ── TRUE ASYNCHRONOUS ZERO-WAIT STREAMING ENDPOINT ──
 @app.get("/chat/stream")
 async def chat_stream(message: str, session_id: str):
     if not message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty")
 
+    # Lazy import to keep boot safe
+    from agent import run_agent_stream
+    from memory import load_history, append_turn
+
     async def generate():
         try:
             history = load_history(session_id)
-
             async for chunk in run_agent_stream(message, history=history):
                 if chunk["type"] == "token":
                     data = json.dumps({'token': chunk['content']})
                     yield f"data: {data}\n\n"
-                    await asyncio.sleep(0) # Yields control instantly to allow flushing
+                    await asyncio.sleep(0)
                 elif chunk["type"] == "metadata":
                     append_turn(session_id, message, chunk["reply"])
-                    
                     data = json.dumps({
                         'done': True, 
                         'source': chunk['source'], 
@@ -99,27 +92,28 @@ async def chat_stream(message: str, session_id: str):
                         'products': chunk['products']
                     })
                     yield f"data: {data}\n\n"
-        
         except Exception as server_error:
-            print(f"[CRITICAL ENDPOINT FAILURE] Stream severed: {server_error}")
-            error_packet = {
-                "error": True,
-                "type": "SERVER_PIPELINE_DEGRADED",
-                "message": "We encountered minor engine friction, re-routing optimization paths..."
-            }
-            yield f"data: {json.dumps(error_packet)}\n\n"
+            yield f"data: {json.dumps({'error': True, 'message': 'Engine loading or missing database files.'})}\n\n"
 
-    return StreamingResponse(
-        generate(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no", # Critical for cloud proxies like Nginx/Cloudflare to not buffer your stream
-            "Connection": "keep-alive",
-        }
-    )
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 @app.post("/chat/clear")
 def clear(req: ClearRequest):
+    from memory import clear_session
     clear_session(req.session_id)
     return {"status": "cleared", "session_id": req.session_id}
+
+# ── PRODUCTION DATABASE SEEDING ENDPOINT ──
+@app.post("/api/admin/seed-database-volume")
+def seed_database_volume(background_tasks: BackgroundTasks):
+    def run_seeding_sequence():
+        try:
+            print("--- Starting Production Data Volume Seeding ---")
+            subprocess.run(["python", "embed/ingest.py"], check=True)
+            subprocess.run(["python", "backend/build_bm25.py"], check=True)
+            print("--- Production Data Volume Seeding Completed ---")
+        except subprocess.CalledProcessError as e:
+            print(f"[ERROR] Database seeding sequence failed: {e}")
+
+    background_tasks.add_task(run_seeding_sequence)
+    return {"status": "seeding sequence initialized in the background"}

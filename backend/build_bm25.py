@@ -45,7 +45,12 @@ def build_bm25(docs, name):
 
 def main():
     client = chromadb.PersistentClient(path=CHROMA_PATH)
+    # Try to look up the collection; fallback smoothly if the cloud volume is still loading journals
+try:
     collection = client.get_collection("knowledge_base")
+except Exception:
+    print("[INFO] Collection not initialized in journal layers yet. Fetching or creating schema...")
+    collection = client.get_or_create_collection("knowledge_base")
     print(f"Total items in collection: {collection.count()}")
 
     product_docs = fetch_all(collection, "excel")

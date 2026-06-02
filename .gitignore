@@ -9,14 +9,6 @@ __pycache__/
 *.pyc
 *.pyo
 
-# ChromaDB storage (large binary, regenerate with ingest.py)
-embed/chroma_persistent_storage/
-
-# BM25 pickle files (regenerate with build_bm25.py)
-backend/data/blog_bm25.pkl
-backend/data/product_bm25.pkl
-
-
 # Frontend build output
 frontend/node_modules/
 frontend/dist/
@@ -31,3 +23,7 @@ Thumbs.db
 
 # Logs
 *.log
+
+# ── DATABASE & MACHINE LEARNING ASSETS (CLEAN UTF-8) ──
+embed/chroma_persistent_storage/
+backend/data/*.pkl
