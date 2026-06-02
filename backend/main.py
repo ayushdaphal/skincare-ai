@@ -117,3 +117,23 @@ def seed_database_volume(background_tasks: BackgroundTasks):
 
     background_tasks.add_task(run_seeding_sequence)
     return {"status": "seeding sequence initialized in the background"}
+
+@app.get("/api/admin/debug-paths")
+def debug_paths():
+    import os
+    base_path = "/app"
+    
+    def scan_dir(path):
+        if not os.path.exists(path):
+            return f"{path} does not exist"
+        try:
+            return os.listdir(path)
+        except Exception as e:
+            return str(e)
+
+    return {
+        "current_working_dir": os.getcwd(),
+        "app_contents": scan_dir(base_path),
+        "embed_contents": scan_dir(f"{base_path}/embed"),
+        "data_contents": scan_dir(f"{base_path}/embed/data")
+    }
