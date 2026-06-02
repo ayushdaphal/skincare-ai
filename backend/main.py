@@ -1,26 +1,38 @@
 import sys
 import os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from dotenv import load_dotenv
-load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env"))
-
+import json
+import asyncio
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-import json
-import asyncio
 
-from agent import run_agent, run_agent_stream  # Added run_agent_stream import
+# Force root directory into path so imports like 'agent' and 'memory' resolve smoothly in Docker
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from dotenv import load_dotenv
+# Look for .env file at the root directory level
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env"))
+
+from agent import run_agent, run_agent_stream  
 from memory import load_history, append_turn, clear_session
 
 app = FastAPI(title="Skincare AI API")
 
+# ── PRODUCTION CORS CONFIGURATION ──
+# Read your deployed frontend URL from environment variables; fallback to local Vite dev server
+FRONTEND_URL = os.getenv("FRONTEND_PRODUCTION_URL", "http://localhost:5173")
+
+origins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    FRONTEND_URL
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "*"],
-    allow_credentials=True,
+    allow_origins=origins,
+    allow_credentials=True, # Critical for secure session handshakes
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -57,7 +69,7 @@ def chat(req: ChatRequest):
         "session_id": req.session_id,
     }
 
-# ── REFACTORED: TRUE ASYNCHRONOUS ZERO-WAIT STREAMING ENDPOINT ──
+# ── TRUE ASYNCHRONOUS ZERO-WAIT STREAMING ENDPOINT ──
 @app.get("/chat/stream")
 async def chat_stream(message: str, session_id: str):
     if not message.strip():
@@ -67,27 +79,24 @@ async def chat_stream(message: str, session_id: str):
         try:
             history = load_history(session_id)
 
-            # Consumes token bits natively over the generator line without slicing delays
             async for chunk in run_agent_stream(message, history=history):
                 if chunk["type"] == "token":
-                    # Immediately pass raw token chunks forward into the frontend stream canvas
                     data = json.dumps({'token': chunk['content']})
                     yield f"data: {data}\n\n"
-                    # Ensure tokens are flushed immediately
-                    await asyncio.sleep(0)
+                    await asyncio.sleep(0) # Yields control instantly to allow flushing
                 elif chunk["type"] == "metadata":
-                    # Save transaction securely to memory history at the absolute end of generation
                     append_turn(session_id, message, chunk["reply"])
                     
-                    # Push execution state vectors for layout structures
-                    data = json.dumps({'done': True, 'source': chunk['source'], 'tools_used': chunk['tools_used'], 'products': chunk['products']})
+                    data = json.dumps({
+                        'done': True, 
+                        'source': chunk['source'], 
+                        'tools_used': chunk['tools_used'], 
+                        'products': chunk['products']
+                    })
                     yield f"data: {data}\n\n"
         
         except Exception as server_error:
-            # Captures global pipeline failures (e.g., database locks, total network dropouts)
             print(f"[CRITICAL ENDPOINT FAILURE] Stream severed: {server_error}")
-            
-            # Emit a structured error event payload down the active socket connection channel
             error_packet = {
                 "error": True,
                 "type": "SERVER_PIPELINE_DEGRADED",
@@ -100,7 +109,7 @@ async def chat_stream(message: str, session_id: str):
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
+            "X-Accel-Buffering": "no", # Critical for cloud proxies like Nginx/Cloudflare to not buffer your stream
             "Connection": "keep-alive",
         }
     )

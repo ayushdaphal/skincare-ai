@@ -6,12 +6,26 @@ from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env"))
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "sessions.db")
+# --- PRODUCTION PERSISTENCE CONFIGURATION ---
+# Check if a cloud persistent volume path exists; fallback to local file system if not
+PERSISTENT_VOLUME_PATH = os.getenv("CHROMA_SERVER_PATH") 
+
+if PERSISTENT_VOLUME_PATH:
+    # Production: Store sessions.db inside the mounted network volume
+    DB_PATH = os.path.join(PERSISTENT_VOLUME_PATH, "sessions.db")
+else:
+    # Local Development: Keeps your exact original setup intact
+    DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "sessions.db")
+
+# Ensure the parent directory directory path exists before creating the sqlite connection
+os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+# --------------------------------------------
 
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 SUMMARY_MODEL = "llama-3.1-8b-instant"
 
 def _get_conn():
+    # Connects safely to either local path or cloud volume path
     conn = sqlite3.connect(DB_PATH)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS sessions (

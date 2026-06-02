@@ -1,11 +1,13 @@
-FROM python:3.13-slim
+# 1. Swapped to 3.11-slim for stable binary wheels compatibility (ChromaDB, Numpy, Pandas)
+FROM python:3.11-slim
 
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# 2. Installed build-essential and g++ so database native binaries compile smoothly
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
+    build-essential \
+    g++ \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
@@ -24,10 +26,11 @@ COPY . .
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PORT=8000
-ENV PYTHONPATH=/app:/app/backend
+# Ensures modules under root, backend, and tools folders resolve effortlessly
+ENV PYTHONPATH=/app:/app/backend:/app/tools
 
 # Expose port
 EXPOSE 8000
 
-# Run the application - change to backend and run uvicorn from there
-CMD ["sh", "-c", "cd backend && python -m uvicorn main:app --host 0.0.0.0 --port $PORT --workers 4"]
+# 3. Changed workers to 1 to protect your SQLite sessions.db file engine from concurrency write-locks
+CMD ["sh", "-c", "cd backend && python -m uvicorn main:app --host 0.0.0.0 --port $PORT"]
