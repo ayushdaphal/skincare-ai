@@ -16,9 +16,6 @@ embed/chroma_persistent_storage/
 backend/data/blog_bm25.pkl
 backend/data/product_bm25.pkl
 
-# Raw data files (too large for git)
-embed/data/blogs/
-embed/data/knowledge.xlsx
 
 # Frontend build output
 frontend/node_modules/
