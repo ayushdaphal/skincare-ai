@@ -32,5 +32,6 @@ ENV PYTHONPATH=/app:/app/backend:/app/tools
 # Expose port
 EXPOSE 8000
 
-# 3. Changed workers to 1 to protect your SQLite sessions.db file engine from concurrency write-locks
-CMD ["sh", "-c", "cd backend && python -m uvicorn main:app --host 0.0.0.0 --port $PORT"]
+
+# Start Uvicorn directly from the root workspace folder, maintaining full environment variables scope
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
