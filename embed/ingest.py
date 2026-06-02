@@ -125,11 +125,11 @@ def ingest_blogs():
     metas = []
 
     # Use the active directory variable for the loop
-    for folder in os.listdir(active_blogs_dir):
-        blog_path = os.path.join(active_blogs_dir, folder)
-        if not os.path.isdir(blog_path):
-            continue
+    blog_folders = [f for f in os.listdir(active_blogs_dir) if os.path.isdir(os.path.join(active_blogs_dir, f))]
+    print(f"[INFO] Found {len(blog_folders)} blog assets to process.")
 
+    for folder in blog_folders:
+        blog_path = os.path.join(active_blogs_dir, folder)
         metadata_path = os.path.join(blog_path, "metadata.json")
         content_path = os.path.join(blog_path, "content_plain.txt")
 
@@ -151,6 +151,8 @@ def ingest_blogs():
             continue
 
         chunks = chunk_text(content)
+        print(f"  -> Processing: '{folder}' ({len(chunks)} chunks discovered)")
+
         for chunk_idx, chunk in enumerate(chunks):
             combined_text = f"Metadata:\n{json.dumps(metadata)}\n\nContent:\n{chunk}"
             safe_metadata = {
@@ -166,20 +168,29 @@ def ingest_blogs():
             metas.append(safe_metadata)
 
             if len(docs) >= BATCH_SIZE:
+                print(f"    [DISK-SYNC] Pushing a collection batch of {len(docs)} documents into disk partition...")
                 store_batch(docs, metas)
                 docs, metas = [], []
 
-    store_batch(docs, metas)
+    if docs:
+        print(f"    [DISK-SYNC] Flushing final leftover array of {len(docs)} documents into disk partition...")
+        store_batch(docs, metas)
+        
+    print("[SUCCESS] Blog vectors successfully written to persistent layer.")
 
 # ===============================
 # ENTRYPOINT
 # ===============================
 def main():
+    print("\n--- Starting Production Data Volume Seeding ---")
     start_time = time.time()
+    
     ingest_excel()
     ingest_blogs()
+    
     duration = time.time() - start_time
-    print(f"\nDone. Native Ingestion completed successfully in {duration:.2f} seconds.")
+    print(f"\n--- Production Data Volume Seeding Completed ---")
+    print(f"Native Ingestion completed successfully in {duration:.2f} seconds.\n")
 
 if __name__ == "__main__":
     main()
