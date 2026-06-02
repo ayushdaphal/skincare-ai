@@ -36,39 +36,31 @@ collection = client.get_or_create_collection(name=COLLECTION_NAME)
 # ===============================
 def embed_batch_via_api(texts):
     """
-    Sends batch texts to Groq API endpoint to calculate vector arrays.
-    Maintains a 0MB local system memory profile.
+    Sends batch texts to Hugging Face's free serverless Inference API.
+    Maintains a 0MB local system memory profile by outsourcing compute.
     """
-    url = "https://api.groq.com/openai/v1/embeddings"
-    headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": EMBEDDING_MODEL,
-        "input": texts
-    }
+    # Using your exact original model, but hosted completely on the cloud
+    url = "https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/all-MiniLM-L6-v2"
     
-    # Simple rate-limit backoff handler
+    payload = {"inputs": texts, "options": {"wait_for_model": True}}
+    
     for retry in range(3):
         try:
-            response = requests.post(url, json=payload, headers=headers, timeout=30)
+            response = requests.post(url, json=payload, timeout=30)
             if response.status_code == 200:
-                data = response.json()["data"]
-                # Sort indices to guarantee tracking structure alignment
-                data_sorted = sorted(data, key=lambda x: x["index"])
-                return [item["embedding"] for item in data_sorted]
-            elif response.status_code == 429:
-                print(f"\n[RATE LIMIT] Groq API rate bound reached. Backing off for {2 ** retry}s...")
-                time.sleep(2 ** retry)
+                return response.json()
+            elif response.status_code == 503:
+                # Model is loading on HF servers, wait and retry
+                print("\n[INFO] Hugging Face model is booting up, retrying in 5s...")
+                time.sleep(5)
             else:
-                raise Exception(f"Groq API Error: {response.text}")
+                raise Exception(f"Hugging Face API Error: {response.text}")
         except requests.RequestException as e:
             if retry == 2:
-                raise Exception(f"Network failure reaching Groq connection pools: {str(e)}")
-            time.sleep(1)
+                raise Exception(f"Network failure reaching Hugging Face pools: {str(e)}")
+            time.sleep(2)
     
-    raise Exception("Failed to fetch vector representations from API pool after maximum retries.")
+    raise Exception("Failed to fetch vector representations from Hugging Face pool.")
 
 def store_batch(documents, metadatas):
     if not documents:
