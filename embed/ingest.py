@@ -1,44 +1,82 @@
 import os
 import json
 import uuid
+import time
 import pandas as pd
+import requests
 from tqdm import tqdm
 import chromadb
-from sentence_transformers import SentenceTransformer
 
 # ===============================
 # CONFIG
 # ===============================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-EXCEL_PATH = os.path.join(BASE_DIR, "data", "knowledge.xlsx")
-BLOGS_DIR = os.path.join(BASE_DIR, "data", "blogs")
 CSV_PATH = os.path.join(BASE_DIR, "data", "knowledge.csv")
+BLOGS_DIR = os.path.join(BASE_DIR, "data", "blogs")
 
-# Use absolute paths or fallback to system configuration
 CHROMA_PATH = os.getenv("CHROMA_SERVER_PATH", os.path.join(BASE_DIR, "chroma_persistent_storage"))
 COLLECTION_NAME = "knowledge_base"
 
-# Aggressive batch tuning for lower memory environments
+# API Configuration
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+EMBEDDING_MODEL = "nomic-embed-text-v1.5"
+
+# Batch size optimized for Groq API processing bounds
 BATCH_SIZE = 32  
 
-print("Loading embedding model...")
-model = SentenceTransformer("all-MiniLM-L6-v2")
+if not GROQ_API_KEY:
+    print("[WARNING] GROQ_API_KEY environment variable is missing! Seeding will fail if API is unauthenticated.")
 
+print("Initializing Persistent ChromaDB Network Client...")
 client = chromadb.PersistentClient(path=CHROMA_PATH)
 collection = client.get_or_create_collection(name=COLLECTION_NAME)
 
-def embed_batch(texts):
-    return model.encode(
-        texts,
-        batch_size=BATCH_SIZE,
-        show_progress_bar=False,
-        convert_to_numpy=True
-    ).tolist()
+# ===============================
+# EXTERNAL API EMBEDDING PIPELINE
+# ===============================
+def embed_batch_via_api(texts):
+    """
+    Sends batch texts to Groq API endpoint to calculate vector arrays.
+    Maintains a 0MB local system memory profile.
+    """
+    url = "https://api.groq.com/openai/v1/embeddings"
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": EMBEDDING_MODEL,
+        "input": texts
+    }
+    
+    # Simple rate-limit backoff handler
+    for retry in range(3):
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=30)
+            if response.status_code == 200:
+                data = response.json()["data"]
+                # Sort indices to guarantee tracking structure alignment
+                data_sorted = sorted(data, key=lambda x: x["index"])
+                return [item["embedding"] for item in data_sorted]
+            elif response.status_code == 429:
+                print(f"\n[RATE LIMIT] Groq API rate bound reached. Backing off for {2 ** retry}s...")
+                time.sleep(2 ** retry)
+            else:
+                raise Exception(f"Groq API Error: {response.text}")
+        except requests.RequestException as e:
+            if retry == 2:
+                raise Exception(f"Network failure reaching Groq connection pools: {str(e)}")
+            time.sleep(1)
+    
+    raise Exception("Failed to fetch vector representations from API pool after maximum retries.")
 
 def store_batch(documents, metadatas):
     if not documents:
         return
-    embeddings = embed_batch(documents)
+    
+    # Request vector matrix map directly over the network wire
+    embeddings = embed_batch_via_api(documents)
+    
     collection.add(
         ids=[str(uuid.uuid4()) for _ in documents],
         documents=documents,
@@ -47,19 +85,20 @@ def store_batch(documents, metadatas):
     )
 
 # ===============================
-# LOW-MEMORY EXCEL INGESTION
+# EXCEL / CSV INGESTION
 # ===============================
 def ingest_excel():
     print("Processing CSV catalog via ultra-fast memory slicing mode...")
-    
-    # Read the file data into a memory variable exactly ONCE (takes less than 5MB of RAM for text)
+    if not os.path.exists(CSV_PATH):
+        print(f"[ERROR] Product catalog asset not found at path context: {CSV_PATH}")
+        return
+
     df = pd.read_csv(CSV_PATH, encoding="latin1")
     total_rows = len(df)
     
     docs = []
     metas = []
     
-    # Process slices using CPU memory bounds instead of pulling from the cloud disk repeatedly
     for skip in tqdm(range(0, total_rows, BATCH_SIZE), desc="Embedding Catalog"):
         df_chunk = df.iloc[skip : skip + BATCH_SIZE]
         
@@ -69,11 +108,12 @@ def ingest_excel():
             docs.append(row_text)
             metas.append({
                 "source": "excel",
-                "row_index": int(skip + idx)
+                "row_index": int(skip + len(docs) - 1)
             })
             
         store_batch(docs, metas)
-        docs, metas = [], []  # Flush batch tracking variables out of memory loop steps
+        docs, metas = [], []  # Explicitly flush temporary list variables
+
 # ===============================
 # BLOG INGESTION
 # ===============================
@@ -141,10 +181,19 @@ def ingest_blogs():
 
     store_batch(docs, metas)
 
+# ===============================
+# MAIN ENTRYPOINT
+# ===============================
 def main():
+    if not GROQ_API_KEY:
+        print("[CRITICAL] Aborting ingestion sequence. GROQ_API_KEY environment variable is required.")
+        return
+    
+    start_time = time.time()
     ingest_excel()
     ingest_blogs()
-    print("\nDone. Ingestion completed under low memory bounds.")
+    duration = time.time() - start_time
+    print(f"\nDone. Ingestion completed under light memory bounds in {duration:.2f} seconds.")
 
 if __name__ == "__main__":
     main()

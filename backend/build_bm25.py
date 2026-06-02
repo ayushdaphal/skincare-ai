@@ -50,7 +50,7 @@ try:
     collection = client.get_collection("knowledge_base")
 except Exception:
     print("[INFO] Collection not initialized in journal layers yet. Fetching or creating schema...")
-    collection = client.get_or_create_collection("knowledge_base")
+    collection = client.get_or_create_collection("knowledge_base")  
     print(f"Total items in collection: {collection.count()}")
 
     product_docs = fetch_all(collection, "excel")
