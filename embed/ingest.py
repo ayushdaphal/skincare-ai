@@ -19,7 +19,7 @@ COLLECTION_NAME = "knowledge_base"
 
 # API Configuration
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-EMBEDDING_MODEL = "nomic-embed-text-v1.5"
+EMBEDDING_MODEL = "nomic-embed-text-v1_5"
 
 # Batch size optimized for Groq API processing bounds
 BATCH_SIZE = 32  
