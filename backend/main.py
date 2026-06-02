@@ -1,18 +1,17 @@
 import sys
 import os
-print("\n" + "="*50)
-print("[DUMPING AVAILABLE ENVIRONMENT KEYS IN PRODUCTION]")
-print(list(os.environ.keys()))
-print(f"PORT variable found: {os.getenv('PORT')}")
-print(f"GROQ_API_KEY exists directly: {'GROQ_API_KEY' in os.environ}")
-print("="*50 + "\n")
 import json
 import asyncio
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-
+print("\n" + "="*50)
+print("[DUMPING AVAILABLE ENVIRONMENT KEYS IN PRODUCTION]")
+print(list(os.environ.keys()))
+print(f"PORT variable found: {os.getenv('PORT')}")
+print(f"GROQ_API_KEY exists directly: {'GROQ_API_KEY' in os.environ}")
+print("="*50 + "\n")
 # Force root directory into path so imports like 'agent' and 'memory' resolve smoothly in Docker
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
