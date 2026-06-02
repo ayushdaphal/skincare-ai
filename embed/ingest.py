@@ -3,9 +3,9 @@ import json
 import uuid
 import time
 import pandas as pd
-import requests
 from tqdm import tqdm
 import chromadb
+from chromadb.utils import embedding_functions
 
 # ===============================
 # CONFIG
@@ -16,73 +16,37 @@ BLOGS_DIR = os.path.join(BASE_DIR, "data", "blogs")
 
 CHROMA_PATH = os.getenv("CHROMA_SERVER_PATH", os.path.join(BASE_DIR, "chroma_persistent_storage"))
 COLLECTION_NAME = "knowledge_base"
-
-# API Configuration
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-EMBEDDING_MODEL = "nomic-embed-text-v1_5"
-
-# Batch size optimized for Groq API processing bounds
 BATCH_SIZE = 32  
 
-if not GROQ_API_KEY:
-    print("[WARNING] GROQ_API_KEY environment variable is missing! Seeding will fail if API is unauthenticated.")
+print("Initializing Fast Native ONNX Embedding Function...")
+# This completely replaces sentence-transformers with a flat 0MB RAM footprint tracking layer
+onnx_ef = embedding_functions.ONNXMiniLM_L6_V2()
 
-print("Initializing Persistent ChromaDB Network Client...")
+print("Initializing Persistent ChromaDB Client...")
 client = chromadb.PersistentClient(path=CHROMA_PATH)
-collection = client.get_or_create_collection(name=COLLECTION_NAME)
-
-# ===============================
-# EXTERNAL API EMBEDDING PIPELINE
-# ===============================
-def embed_batch_via_api(texts):
-    """
-    Sends batch texts to Hugging Face's free serverless Inference API.
-    Maintains a 0MB local system memory profile by outsourcing compute.
-    """
-    # Using your exact original model, but hosted completely on the cloud
-    url = "https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/all-MiniLM-L6-v2"
-    
-    payload = {"inputs": texts, "options": {"wait_for_model": True}}
-    
-    for retry in range(3):
-        try:
-            response = requests.post(url, json=payload, timeout=30)
-            if response.status_code == 200:
-                return response.json()
-            elif response.status_code == 503:
-                # Model is loading on HF servers, wait and retry
-                print("\n[INFO] Hugging Face model is booting up, retrying in 5s...")
-                time.sleep(5)
-            else:
-                raise Exception(f"Hugging Face API Error: {response.text}")
-        except requests.RequestException as e:
-            if retry == 2:
-                raise Exception(f"Network failure reaching Hugging Face pools: {str(e)}")
-            time.sleep(2)
-    
-    raise Exception("Failed to fetch vector representations from Hugging Face pool.")
+collection = client.get_or_create_collection(
+    name=COLLECTION_NAME, 
+    embedding_function=onnx_ef
+)
 
 def store_batch(documents, metadatas):
     if not documents:
         return
     
-    # Request vector matrix map directly over the network wire
-    embeddings = embed_batch_via_api(documents)
-    
+    # Chroma handles the internal vector transformations cleanly under native bindings
     collection.add(
         ids=[str(uuid.uuid4()) for _ in documents],
         documents=documents,
-        metadatas=metadatas,
-        embeddings=embeddings
+        metadatas=metadatas
     )
 
 # ===============================
-# EXCEL / CSV INGESTION
+# PRODUCT INGESTION
 # ===============================
 def ingest_excel():
-    print("Processing CSV catalog via ultra-fast memory slicing mode...")
+    print("Processing CSV catalog via ultra-fast native memory slicing...")
     if not os.path.exists(CSV_PATH):
-        print(f"[ERROR] Product catalog asset not found at path context: {CSV_PATH}")
+        print(f"[ERROR] Product catalog asset not found at: {CSV_PATH}")
         return
 
     df = pd.read_csv(CSV_PATH, encoding="latin1")
@@ -104,7 +68,7 @@ def ingest_excel():
             })
             
         store_batch(docs, metas)
-        docs, metas = [], []  # Explicitly flush temporary list variables
+        docs, metas = [], []
 
 # ===============================
 # BLOG INGESTION
@@ -174,18 +138,14 @@ def ingest_blogs():
     store_batch(docs, metas)
 
 # ===============================
-# MAIN ENTRYPOINT
+# ENTRYPOINT
 # ===============================
 def main():
-    if not GROQ_API_KEY:
-        print("[CRITICAL] Aborting ingestion sequence. GROQ_API_KEY environment variable is required.")
-        return
-    
     start_time = time.time()
     ingest_excel()
     ingest_blogs()
     duration = time.time() - start_time
-    print(f"\nDone. Ingestion completed under light memory bounds in {duration:.2f} seconds.")
+    print(f"\nDone. Native Ingestion completed successfully in {duration:.2f} seconds.")
 
 if __name__ == "__main__":
     main()
