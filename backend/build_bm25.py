@@ -28,7 +28,7 @@ def fetch_all(collection, source, batch_size=500):
             break
         all_docs.extend(docs)
         offset += len(docs)
-        print(f"  fetched {offset} so far...")
+        print(f"   fetched {offset} so far...")
         if len(docs) < batch_size:
             break
     return all_docs
@@ -45,12 +45,14 @@ def build_bm25(docs, name):
 
 def main():
     client = chromadb.PersistentClient(path=CHROMA_PATH)
-    # Try to look up the collection; fallback smoothly if the cloud volume is still loading journals
-try:
-    collection = client.get_collection("knowledge_base")
-except Exception:
-    print("[INFO] Collection not initialized in journal layers yet. Fetching or creating schema...")
-    collection = client.get_or_create_collection("knowledge_base")  
+    
+    # Cleaned up indentation block ensures 'client' stays safely within local function scopes
+    try:
+        collection = client.get_collection("knowledge_base")
+    except Exception:
+        print("[INFO] Collection not initialized in journal layers yet. Fetching or creating schema...")
+        collection = client.get_or_create_collection("knowledge_base")  
+        
     print(f"Total items in collection: {collection.count()}")
 
     product_docs = fetch_all(collection, "excel")
