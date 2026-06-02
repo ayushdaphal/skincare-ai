@@ -20,14 +20,14 @@ logger = logging.getLogger(__name__)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env"))
 
-# Check system environment variables directly (this is what Railway injects)
-api_key = os.getenv("GROQ_API_KEY")
-
-if not api_key:
-    print("[CRITICAL WARNING] GROQ_API_KEY is missing! Agent execution calls will fail.")
-    client = None
-else:
-    client = Groq(api_key=api_key)
+# ── HELPER FUNCTION TO INSTANTIATE GROQ LAZILY ──
+def get_groq_clients() -> Tuple[Groq, AsyncGroq]:
+    """Dynamically resolves keys from system or fallback variables on request runtime"""
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        logger.error("[CRITICAL FAILURE] GROQ_API_KEY environment variable is entirely missing!")
+        raise ValueError("GROQ_API_KEY must be configured in your environment system settings.")
+    return Groq(api_key=api_key), AsyncGroq(api_key=api_key)
 
 from tools.search import search_products, search_blogs, web_search
 
@@ -98,24 +98,17 @@ FILLER_PHRASES = {
 import time  # For exponential backoff delays
 import random
 
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-async_client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
 MODEL = "llama-3.1-8b-instant"
 ROUTER_MODEL = "llama-3.1-8b-instant"
 
 def retry_with_backoff(func, *args, max_retries=3, initial_delay=1, **kwargs):
-    """
-    Executes a sync function with exponential backoff and randomized jitter
-    to handle transient network drops or 429/502 API constraints gracefully.
-    """
     delay = initial_delay
     for attempt in range(max_retries):
         try:
             return func(*args, **kwargs)
         except Exception as e:
             if attempt == max_retries - 1:
-                raise e  # Re-throw on final exhaust to let local fallbacks trigger
-            # Apply exponential backoff with +/- 10% randomized jitter bounds
+                raise e  
             jitter = random.uniform(-0.1, 0.1) * delay
             sleep_time = max(0.1, delay + jitter)
             print(f"[RETRY WARNING] Attempt {attempt + 1} failed: {e}. Retrying in {sleep_time:.2f}s...")
@@ -197,7 +190,8 @@ def detect_product_type(message: str, llm_fallback: bool = True) -> List[str]:
     
     if llm_fallback:
         try:
-            response = client.chat.completions.create(
+            sync_client, _ = get_groq_clients()
+            response = sync_client.chat.completions.create(
                 model=ROUTER_MODEL,
                 messages=[
                     {"role": "system", "content": "You are a product classifier. Classify if the user query is about HAIR, SKIN, or BOTH. Return ONLY one word: hair, skin, or both."},
@@ -265,7 +259,7 @@ def check_clarification(message: str, history: list, product_type: Optional[List
         if not existing_context.get("hair_concern"):
             return {"clarify": True, "question": HAIR_CLARIFICATION_QUESTIONS["hair_concern"], "product_type": "hair"}
         if not existing_context.get("hair_type"):
-            return {"clarify": False} # Smooth dynamic handoff, avoid tracking loop traps
+            return {"clarify": False} 
             
     elif primary_type == "skin":
         if not existing_context.get("skin_type"):
@@ -295,7 +289,8 @@ def route_query_llm(message: str, last_user_msg: str = "", last_reply: str = "")
         context = f"Previous User Message: {last_user_msg}\nPrevious Assistant Reply: {last_reply}\n\nCurrent User Message: {message}"
 
     try:
-        response = client.chat.completions.create(
+        sync_client, _ = get_groq_clients()
+        response = sync_client.chat.completions.create(
             model=ROUTER_MODEL,
             messages=[
                 {"role": "system", "content": ROUTER_PROMPT},
@@ -340,7 +335,6 @@ def run_agent(user_message: str, history: list = None) -> dict:
             if msg.get("role") == "user" and not last_user_msg: last_user_msg = msg["content"]
             if last_reply and last_user_msg: break
 
-    # Context-Aware Product Type Handling
     product_type = detect_product_type(user_message, llm_fallback=False)
     if len(user_message.split()) < 5 and history:
         history_text = " ".join([m.get("content", "").lower() for m in history[-5:]])
@@ -363,13 +357,12 @@ def run_agent(user_message: str, history: list = None) -> dict:
     if "product" in sources:
         print(f"[TOOL CALL] search_products(query={contextual_query!r}, max_price={max_price})")
         try:
-            # Wrapped in retry backoff bounds before shifting to dynamic downgrades
             result = retry_with_backoff(search_products, contextual_query, max_price=max_price)
             all_results["products"] = result
             tools_used.append("search_products")
         except Exception as e:
             print(f"[GRACEFUL DEGRADATION] search_products failed completely: {e}. Isolation active.")
-            all_results["products"] = {"results": []}  # Safe empty fallback template structure
+            all_results["products"] = {"results": []} 
     if "blog" in sources:
         print(f"[TOOL CALL] search_blogs(query={contextual_query!r})")
         try:
@@ -416,7 +409,8 @@ def run_agent(user_message: str, history: list = None) -> dict:
     messages.append({"role": "user", "content": f"User question: {user_message}\n\nSearch results:\n{context}"})
 
     try:
-        response = client.chat.completions.create(model=MODEL, messages=messages, max_tokens=300, temperature=0.7)
+        sync_client, _ = get_groq_clients()
+        response = sync_client.chat.completions.create(model=MODEL, messages=messages, max_tokens=300, temperature=0.7)
         reply = response.choices[0].message.content
     except Exception as e:
         logger.error(f"[GROQ_ERROR] Fallback triggered: {e}")
@@ -528,6 +522,7 @@ async def run_agent_stream(user_message: str, history: list = None):
         return
 
     try:
+        _, async_client = get_groq_clients()
         response_stream = await async_client.chat.completions.create(
             model=MODEL, messages=prep["messages"], max_tokens=300, temperature=0.7, stream=True
         )
