@@ -44,6 +44,14 @@ def store_batch(documents, metadatas):
 # PRODUCT INGESTION
 # ===============================
 def ingest_excel():
+    print("Checking existing vector collection layers...")
+    
+    # Check if data has already been processed on your persistent volume
+    existing_count = collection.count()
+    if existing_count > 0:
+        print(f"[INFO] Found {existing_count} existing vectors in 'knowledge_base'. Skipping heavy embedding loop.")
+        return
+
     print("Processing CSV catalog via ultra-fast native memory slicing...")
     if not os.path.exists(CSV_PATH):
         print(f"[ERROR] Product catalog asset not found at: {CSV_PATH}")
@@ -69,7 +77,6 @@ def ingest_excel():
             
         store_batch(docs, metas)
         docs, metas = [], []
-
 # ===============================
 # BLOG INGESTION
 # ===============================

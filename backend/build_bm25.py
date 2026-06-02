@@ -34,6 +34,11 @@ def fetch_all(collection, source, batch_size=500):
     return all_docs
 
 def build_bm25(docs, name):
+    # Guard clause to keep empty lists from causing crashes
+    if not docs:
+        print(f"[INFO] No documents fetched for {name}. Skipping BM25 index compilation.")
+        return None
+        
     print(f"Building BM25 for {name} ({len(docs)} docs)...")
     tokenized = [doc.lower().split() for doc in tqdm(docs)]
     bm25 = BM25Okapi(tokenized)
