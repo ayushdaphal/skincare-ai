@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".env"))
 
-CHROMA_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "embed", "chroma_persistent_storage")
+CHROMA_PATH = os.getenv("CHROMA_SERVER_PATH", os.path.join(os.path.dirname(__file__), "..", "..", "embed", "chroma_persistent_storage"))
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 
 # ── Load models + indices once at import time ──
@@ -22,19 +22,31 @@ reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
 
 print("Loading ChromaDB...")
 chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
-# This prevents crashes if the DB is blank; it creates an empty collection instead
 collection = chroma_client.get_or_create_collection("knowledge_base")
 
+# ── DEFENSIVE PRODUCTION FILE LOADING FOR BM25 ──
 print("Loading BM25 indices...")
-with open(os.path.join(DATA_DIR, "product_bm25.pkl"), "rb") as f:
-    product_bm25_data = pickle.load(f)
-with open(os.path.join(DATA_DIR, "blog_bm25.pkl"), "rb") as f:
-    blog_bm25_data = pickle.load(f)
+try:
+    with open(os.path.join(DATA_DIR, "product_bm25.pkl"), "rb") as f:
+        product_bm25_data = pickle.load(f)
+    product_bm25 = product_bm25_data["bm25"]
+    product_docs = product_bm25_data["docs"]
+    print("✓ Product BM25 indices loaded successfully")
+except FileNotFoundError:
+    print("[WARNING] 'product_bm25.pkl' not found. Product BM25 feature disabled until indices are built.")
+    product_bm25 = None
+    product_docs = []
 
-product_bm25 = product_bm25_data["bm25"]
-product_docs = product_bm25_data["docs"]
-blog_bm25 = blog_bm25_data["bm25"]
-blog_docs = blog_bm25_data["docs"]
+try:
+    with open(os.path.join(DATA_DIR, "blog_bm25.pkl"), "rb") as f:
+        blog_bm25_data = pickle.load(f)
+    blog_bm25 = blog_bm25_data["bm25"]
+    blog_docs = blog_bm25_data["docs"]
+    print("✓ Blog BM25 indices loaded successfully")
+except FileNotFoundError:
+    print("[WARNING] 'blog_bm25.pkl' not found. Blog BM25 feature disabled until indices are built.")
+    blog_bm25 = None
+    blog_docs = []
 
 tavily = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
@@ -80,6 +92,11 @@ def _hybrid_search(query: str, source: str, bm25, docs: list, n: int = 5) -> lis
     dense_docs = dense_results["documents"][0]
     dense_metas = dense_results["metadatas"][0]
 
+    # If BM25 index hasn't been built yet on the cloud, fallback cleanly to purely dense retrieval
+    if bm25 is None or not docs:
+        print(f"[SEARCH FALLBACK] BM25 missing for source '{source}'. Returning dense pipeline results.")
+        return dense_docs[:n]
+
     # Sparse search via BM25
     tokens = query.lower().split()
     bm25_scores = bm25.get_scores(tokens)
@@ -114,7 +131,6 @@ def _hybrid_search(query: str, source: str, bm25, docs: list, n: int = 5) -> lis
 def _rerank(query: str, docs: list, top_n: int = 5) -> list:
     if not docs:
         return docs
-    # Use first 512 chars of each doc to keep it fast
     pairs = [(query, doc[:512]) for doc in docs]
     scores = reranker.predict(pairs)
     scored = sorted(zip(scores, docs), key=lambda x: x[0], reverse=True)
@@ -128,10 +144,8 @@ def search_products(query: str, max_price: float = None, n: int = 5) -> dict:
     if cached:
         return cached
 
-    # Step 1: Hybrid search — get broad candidates
     results = _hybrid_search(query, "excel", product_bm25, product_docs, n=n * 3)
 
-    # Step 2: Price + skin type filter
     skin_type_filters = []
     query_lower = query.lower()
     if "oily" in query_lower:
@@ -168,10 +182,8 @@ def search_products(query: str, max_price: float = None, n: int = 5) -> dict:
 
         results = filtered if filtered else results
 
-    # Step 3: Cross-encoder rerank
     results = _rerank(query, results[:n * 2], top_n=n)
 
-    # Step 4: Extract key fields
     products = []
     for doc in results:
         p = {}
@@ -208,13 +220,9 @@ def search_blogs(query: str, n: int = 3) -> dict:
     if cached:
         return cached
 
-    # Step 1: Hybrid search
     results = _hybrid_search(query, "blog", blog_bm25, blog_docs, n=n * 3)
-
-    # Step 2: Cross-encoder rerank
     results = _rerank(query, results, top_n=n)
 
-    # Step 3: Extract metadata
     blogs = []
     for doc in results:
         b = {"excerpt": doc[:300]}
@@ -243,6 +251,11 @@ def web_search(query: str) -> dict:
     try:
         response = tavily.search(query=query, max_results=3)
         results = [
+            {
+                "title": r.get("title", ""),
+                "url": r.get("url", ""),
+                "content": r.get("content", "")[:500]
+            }
             {
                 "title": r.get("title", ""),
                 "url": r.get("url", ""),
