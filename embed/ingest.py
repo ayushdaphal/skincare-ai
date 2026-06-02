@@ -14,7 +14,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(BASE_DIR, "data", "knowledge.csv")
 BLOGS_DIR = os.path.join(BASE_DIR, "data", "blogs")
 
-CHROMA_PATH = os.getenv("CHROMA_SERVER_PATH", os.path.join(BASE_DIR, "chroma_persistent_storage"))
+# Force look at the absolute container path where Railway mounts the Volume
+CHROMA_PATH = os.getenv("CHROMA_SERVER_PATH", "/app/embed/chroma_persistent_storage")
 COLLECTION_NAME = "knowledge_base"
 BATCH_SIZE = 32  
 

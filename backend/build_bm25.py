@@ -6,8 +6,7 @@ import pickle
 import chromadb
 from rank_bm25 import BM25Okapi
 from tqdm import tqdm
-
-CHROMA_PATH = os.path.join(os.path.dirname(__file__), "..", "embed", "chroma_persistent_storage")
+CHROMA_PATH = os.getenv("CHROMA_SERVER_PATH", "/app/embed/chroma_persistent_storage")
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "data")
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
