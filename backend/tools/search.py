@@ -22,7 +22,8 @@ reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
 
 print("Loading ChromaDB...")
 chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
-collection = chroma_client.get_collection("knowledge_base")
+# This prevents crashes if the DB is blank; it creates an empty collection instead
+collection = chroma_client.get_or_create_collection("knowledge_base")
 
 print("Loading BM25 indices...")
 with open(os.path.join(DATA_DIR, "product_bm25.pkl"), "rb") as f:
