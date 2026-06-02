@@ -57,7 +57,7 @@ def ingest_excel():
     row_count = 0
     
     # chunksize reads exactly 32 rows sequentially into memory at a time, keeping RAM flat
-    for chunk_df in tqdm(pd.read_csv(CSV_PATH, chunksize=BATCH_SIZE), desc="Embedding Catalog"):
+    for chunk_df in tqdm(pd.read_csv(CSV_PATH, chunksize=BATCH_SIZE, encoding="latin1"), desc="Embedding Catalog"):
         for idx, row in chunk_df.iterrows():
             row_text = "\n".join([f"{col}: {str(row[col])}" for col in chunk_df.columns if pd.notna(row[col])])
             
