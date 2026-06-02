@@ -20,6 +20,19 @@ logger = logging.getLogger(__name__)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env"))
 
+# Check system environment variables directly (this is what Railway injects)
+api_key = os.getenv("GROQ_API_KEY")
+
+if not api_key:
+    # If it's still missing, we raise a descriptive error to see what went wrong
+    raise ValueError(
+        "[CRITICAL ERROR] GROQ_API_KEY environment variable is missing or empty. "
+        "Please ensure it is set correctly in your environment."
+    )
+
+# Initialize the Groq client securely using the resolved key
+client = Groq(api_key=api_key)
+
 from tools.search import search_products, search_blogs, web_search
 
 # ═══════════════════════════════════════════════════════════════════════════════
