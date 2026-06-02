@@ -24,14 +24,10 @@ load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env
 api_key = os.getenv("GROQ_API_KEY")
 
 if not api_key:
-    # If it's still missing, we raise a descriptive error to see what went wrong
-    raise ValueError(
-        "[CRITICAL ERROR] GROQ_API_KEY environment variable is missing or empty. "
-        "Please ensure it is set correctly in your environment."
-    )
-
-# Initialize the Groq client securely using the resolved key
-client = Groq(api_key=api_key)
+    print("[CRITICAL WARNING] GROQ_API_KEY is missing! Agent execution calls will fail.")
+    client = None
+else:
+    client = Groq(api_key=api_key)
 
 from tools.search import search_products, search_blogs, web_search
 
