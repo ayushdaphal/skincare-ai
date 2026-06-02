@@ -11,3 +11,4 @@ streamlit
 tavily_python
 tqdm
 uvicorn
+openpyxl>=3.1.0

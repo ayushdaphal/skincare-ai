@@ -18,7 +18,7 @@ EXCEL_PATH = os.path.join(BASE_DIR, "data", "knowledge.xlsx")
 # Securely resolves to /app/embed/data/blogs
 BLOGS_DIR = os.path.join(BASE_DIR, "data", "blogs")
 
-CHROMA_PATH = "./chroma_persistent_storage"
+CHROMA_PATH = os.getenv("CHROMA_SERVER_PATH", os.path.join(os.path.dirname(__file__), "chroma_persistent_storage"))
 COLLECTION_NAME = "knowledge_base"
 
 CHUNK_SIZE = 2000
