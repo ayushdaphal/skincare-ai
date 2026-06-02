@@ -6,6 +6,7 @@ import pickle
 import chromadb
 from rank_bm25 import BM25Okapi
 from tqdm import tqdm
+
 CHROMA_PATH = os.getenv("CHROMA_SERVER_PATH", "/app/embed/chroma_persistent_storage")
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "data")
 
@@ -27,7 +28,7 @@ def fetch_all(collection, source, batch_size=500):
             break
         all_docs.extend(docs)
         offset += len(docs)
-        print(f"   fetched {offset} so far...")
+        print(f"    fetched {offset} so far...")
         if len(docs) < batch_size:
             break
     return all_docs
@@ -50,7 +51,6 @@ def build_bm25(docs, name):
 def main():
     client = chromadb.PersistentClient(path=CHROMA_PATH)
     
-    # Cleaned up indentation block ensures 'client' stays safely within local function scopes
     try:
         collection = client.get_collection("knowledge_base")
     except Exception:

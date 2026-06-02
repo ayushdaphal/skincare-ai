@@ -12,15 +12,15 @@ from chromadb.utils import embedding_functions
 # ===============================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(BASE_DIR, "data", "knowledge.csv")
-BLOGS_DIR = os.path.join(BASE_DIR, "data", "blogs")
 
 # Force look at the absolute container path where Railway mounts the Volume
 CHROMA_PATH = os.getenv("CHROMA_SERVER_PATH", "/app/embed/chroma_persistent_storage")
+# Absolute path fallback ensures the container locates the folder regardless of execution context
+BLOGS_DIR = os.getenv("BLOGS_DATA_PATH", "/app/embed/data/blogs")
 COLLECTION_NAME = "knowledge_base"
 BATCH_SIZE = 32  
 
 print("Initializing Fast Native ONNX Embedding Function...")
-# This completely replaces sentence-transformers with a flat 0MB RAM footprint tracking layer
 onnx_ef = embedding_functions.ONNXMiniLM_L6_V2()
 
 print("Initializing Persistent ChromaDB Client...")
@@ -34,7 +34,6 @@ def store_batch(documents, metadatas):
     if not documents:
         return
     
-    # Chroma handles the internal vector transformations cleanly under native bindings
     collection.add(
         ids=[str(uuid.uuid4()) for _ in documents],
         documents=documents,
@@ -45,12 +44,12 @@ def store_batch(documents, metadatas):
 # PRODUCT INGESTION
 # ===============================
 def ingest_excel():
-    print("Checking existing vector collection layers...")
+    print("Checking existing product vector collection layers...")
     
-    # Check if data has already been processed on your persistent volume
-    existing_count = collection.count()
-    if existing_count > 0:
-        print(f"[INFO] Found {existing_count} existing vectors in 'knowledge_base'. Skipping heavy embedding loop.")
+    # Query specifically for product sources to check isolation status
+    existing_products = collection.get(where={"source": "excel"}, limit=1)
+    if existing_products and existing_products["ids"]:
+        print("[INFO] Product catalog vectors already exist. Skipping heavy product embedding loop.")
         return
 
     print("Processing CSV catalog via ultra-fast native memory slicing...")
@@ -78,6 +77,7 @@ def ingest_excel():
             
         store_batch(docs, metas)
         docs, metas = [], []
+
 # ===============================
 # BLOG INGESTION
 # ===============================
@@ -91,9 +91,17 @@ def chunk_text(text, chunk_size=2000, overlap=300):
     return chunks
 
 def ingest_blogs():
-    print("Processing blogs...")
+    print("Checking existing blog vector collection layers...")
+    
+    # Query specifically for blog sources to allow isolated ingestion
+    existing_blogs = collection.get(where={"source": "blog"}, limit=1)
+    if existing_blogs and existing_blogs["ids"]:
+        print("[INFO] Blog vectors already exist. Skipping blog embedding loop.")
+        return
+
+    print("Processing blogs directory text assets...")
     if not os.path.exists(BLOGS_DIR):
-        print("[WARNING] Blogs directory not found, skipping.")
+        print(f"[WARNING] Blogs directory not found at {BLOGS_DIR}, skipping.")
         return
         
     docs = []
