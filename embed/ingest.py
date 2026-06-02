@@ -7,18 +7,32 @@ from tqdm import tqdm
 import chromadb
 from chromadb.utils import embedding_functions
 
-# ===============================
-# CONFIG
-# ===============================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(BASE_DIR, "data", "knowledge.csv")
 
 # Force look at the absolute container path where Railway mounts the Volume
 CHROMA_PATH = os.getenv("CHROMA_SERVER_PATH", "/app/embed/chroma_persistent_storage")
-# Absolute path fallback ensures the container locates the folder regardless of execution context
-BLOGS_DIR = os.getenv("BLOGS_DATA_PATH", "/app/embed/data/blogs")
 COLLECTION_NAME = "knowledge_base"
-BATCH_SIZE = 32  
+BATCH_SIZE = 32
+
+# Dynamic path resolution checks environment variable first, then standard fallbacks
+def get_blogs_directory():
+    env_path = os.getenv("BLOGS_DATA_PATH")
+    if env_path and os.path.exists(env_path):
+        return env_path
+        
+    # Check fallback variations in the container layout
+    fallbacks = [
+        "/app/embed/data/blogs",
+        "/app/data/blogs",
+        os.path.join(BASE_DIR, "data", "blogs")
+    ]
+    for path in fallbacks:
+        if os.path.exists(path):
+            return path
+            
+    # Return default if none exist yet to prevent crashing
+    return env_path if env_path else fallbacks[0]
 
 print("Initializing Fast Native ONNX Embedding Function...")
 onnx_ef = embedding_functions.ONNXMiniLM_L6_V2()
@@ -99,16 +113,20 @@ def ingest_blogs():
         print("[INFO] Blog vectors already exist. Skipping blog embedding loop.")
         return
 
-    print("Processing blogs directory text assets...")
-    if not os.path.exists(BLOGS_DIR):
-        print(f"[WARNING] Blogs directory not found at {BLOGS_DIR}, skipping.")
+    # Call the dynamic checker to locate the active folder path
+    active_blogs_dir = get_blogs_directory()
+    print(f"Processing blogs directory text assets at: {active_blogs_dir}")
+    
+    if not os.path.exists(active_blogs_dir):
+        print(f"[WARNING] Blogs directory not found at {active_blogs_dir}, skipping.")
         return
         
     docs = []
     metas = []
 
-    for folder in os.listdir(BLOGS_DIR):
-        blog_path = os.path.join(BLOGS_DIR, folder)
+    # Use the active directory variable for the loop
+    for folder in os.listdir(active_blogs_dir):
+        blog_path = os.path.join(active_blogs_dir, folder)
         if not os.path.isdir(blog_path):
             continue
 
