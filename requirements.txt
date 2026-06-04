@@ -1,7 +1,8 @@
 chromadb
 fastapi
 groq
-numpy
+numpy<2.0.0
+faiss-cpu==1.8.0
 pandas
 pydantic
 python-dotenv
@@ -16,4 +17,3 @@ chromadb>=0.4.0
 onnxruntime>=1.14.0
 pandas
 tqdm
-faiss-cpu==1.8.0
