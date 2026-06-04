@@ -31,3 +31,6 @@ backend/data/*.pkl
 # Ignore the old heavy Chroma DB directory to prevent pushing it to Railway
 **/chroma_persistent_storage/
 backend/embed/chroma_persistent_storage/
+
+chroma-upload.tar
+backend/embed/metadata.json
