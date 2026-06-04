@@ -27,3 +27,7 @@ Thumbs.db
 # ── DATABASE & MACHINE LEARNING ASSETS (CLEAN UTF-8) ──
 embed/chroma_persistent_storage/
 backend/data/*.pkl
+
+# Ignore the old heavy Chroma DB directory to prevent pushing it to Railway
+**/chroma_persistent_storage/
+backend/embed/chroma_persistent_storage/

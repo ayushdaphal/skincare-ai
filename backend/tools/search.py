@@ -4,14 +4,21 @@ import json
 import re
 import numpy as np
 from sentence_transformers import SentenceTransformer, CrossEncoder
-import chromadb
+import faiss
 from tavily import TavilyClient
 from dotenv import load_dotenv
+import gzip  # Built-in module to handle .gz streaming extraction
 
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".env"))
 
-CHROMA_PATH = os.getenv("CHROMA_SERVER_PATH", os.path.join(os.path.dirname(__file__), "..", "..", "embed", "chroma_persistent_storage"))
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
+# Resolve absolute pathing patterns aligned to your folder structures
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+EMBED_DIR = os.path.join(BASE_DIR, "..", "embed")
+DATA_DIR = os.path.join(BASE_DIR, "..", "data")
+
+FAISS_INDEX_PATH = os.path.join(EMBED_DIR, "compressed_index.faiss")
+# Point explicitly to the compressed target variant
+METADATA_MAP_PATH = os.path.join(EMBED_DIR, "metadata.json.gz")
 
 # ── Load models + indices once at import time ──
 print("Loading embedding model...")
@@ -20,9 +27,19 @@ embedder = SentenceTransformer("all-MiniLM-L6-v2")
 print("Loading cross-encoder reranker...")
 reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
 
-print("Loading ChromaDB...")
-chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
-collection = chroma_client.get_or_create_collection("knowledge_base")
+# ── FAISS RESOURCE STORAGE INITIALIZATION OVERRIDE ──
+print("Loading memory-efficient FAISS scalar-quantized index...")
+if os.path.exists(FAISS_INDEX_PATH) and os.path.exists(METADATA_MAP_PATH):
+    faiss_index = faiss.read_index(FAISS_INDEX_PATH)
+    
+    # Read the compressed .gz asset fluidly directly into json decoder 
+    with gzip.open(METADATA_MAP_PATH, "rt", encoding="utf-8") as f:
+        vector_metadata_map = json.load(f)
+    print("✓ FAISS Vector indices and structural gzipped mappings initialized safely")
+else:
+    print("[CRITICAL] FAISS assets missing from target directories. Fallbacks active.")
+    faiss_index = None
+    vector_metadata_map = {}
 
 # ── DEFENSIVE PRODUCTION FILE LOADING FOR BM25 ──
 print("Loading BM25 indices...")
@@ -49,7 +66,6 @@ except FileNotFoundError:
     blog_docs = []
 
 tavily = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
-
 # ── Query cache ──
 _cache = {}
 
@@ -80,17 +96,33 @@ def _store_cache(emb: np.ndarray, result):
     key = emb.astype(np.float32).tobytes()
     _cache[key] = result
 
-# ── Reciprocal Rank Fusion ──
+# ── Reciprocal Rank Fusion via High-Speed Memory Mapping ──
 def _hybrid_search(query: str, source: str, bm25, docs: list, n: int = 5) -> list:
-    # Dense search via ChromaDB
-    dense_results = collection.query(
-        query_texts=[query],
-        n_results=n * 2,
-        where={"source": source},
-        include=["documents", "metadatas"]
-    )
-    dense_docs = dense_results["documents"][0]
-    dense_metas = dense_results["metadatas"][0]
+    dense_docs = []
+    dense_metas = []
+
+    if faiss_index is not None and vector_metadata_map:
+        # 1. Process target textual strings using your sentence transformer layer
+        query_vector = _get_embedding(query).astype("float32").reshape(1, -1)
+        
+        # 2. Extract a broader array segment from your index layout (fetch n * 10 to filter by source type)
+        search_limit = min(n * 10, len(vector_metadata_map))
+        scores, positions = faiss_index.search(query_vector, search_limit)
+        
+        # 3. Traverse index results to find source-isolated matches ("excel" vs "blog")
+        for idx in positions[0]:
+            idx_str = str(idx)
+            if idx_str in vector_metadata_map:
+                record = vector_metadata_map[idx_str]
+                meta_data = record.get("metadata", {})
+                
+                if meta_data.get("source") == source:
+                    dense_docs.append(record.get("document", ""))
+                    dense_metas.append(meta_data)
+                    
+                # Short-circuit loop when we accumulate enough candidates for the RRF merge
+                if len(dense_docs) >= n * 2:
+                    break
 
     # If BM25 index hasn't been built yet on the cloud, fallback cleanly to purely dense retrieval
     if bm25 is None or not docs:
