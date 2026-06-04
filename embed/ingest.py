@@ -1,27 +1,34 @@
 import os
 import json
-import uuid
 import time
 import pandas as pd
+import numpy as np
 from tqdm import tqdm
-import chromadb
+import faiss
 from chromadb.utils import embedding_functions
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(BASE_DIR, "data", "knowledge.csv")
 
-# Force look at the absolute container path where Railway mounts the Volume
-CHROMA_PATH = os.getenv("CHROMA_SERVER_PATH", "/app/embed/chroma_persistent_storage")
-COLLECTION_NAME = "knowledge_base"
+# Ensure target directories exist cleanly 
+EMBED_DIR = os.path.join(BASE_DIR, "embed")
+os.makedirs(EMBED_DIR, exist_ok=True)
+
+FAISS_INDEX_PATH = os.path.join(EMBED_DIR, "compressed_index.faiss")
+METADATA_MAP_PATH = os.path.join(EMBED_DIR, "metadata.json")
+
 BATCH_SIZE = 32
 
-# Dynamic path resolution checks environment variable first, then standard fallbacks
+# Lists to hold all compiled documents, metadatas, and raw vector arrays locally
+all_documents = []
+all_metadatas = []
+all_embeddings = []
+
 def get_blogs_directory():
     env_path = os.getenv("BLOGS_DATA_PATH")
     if env_path and os.path.exists(env_path):
         return env_path
         
-    # Check fallback variations in the container layout
     fallbacks = [
         "/app/embed/data/blogs",
         "/app/data/blogs",
@@ -31,42 +38,30 @@ def get_blogs_directory():
         if os.path.exists(path):
             return path
             
-    # Return default if none exist yet to prevent crashing
     return env_path if env_path else fallbacks[0]
 
 print("Initializing Fast Native ONNX Embedding Function...")
 onnx_ef = embedding_functions.ONNXMiniLM_L6_V2()
 
-print("Initializing Persistent ChromaDB Client...")
-client = chromadb.PersistentClient(path=CHROMA_PATH)
-collection = client.get_or_create_collection(
-    name=COLLECTION_NAME, 
-    embedding_function=onnx_ef
-)
-
-def store_batch(documents, metadatas):
+# Intermediate collector replacing the dynamic database add methods
+def collect_batch(documents, metadatas):
     if not documents:
         return
     
-    collection.add(
-        ids=[str(uuid.uuid4()) for _ in documents],
-        documents=documents,
-        metadatas=metadatas
-    )
+    global all_documents, all_metadatas, all_embeddings
+    
+    # Generate raw 384-dimensional floating point embeddings via your native ONNX engine
+    embeddings = onnx_ef(documents)
+    
+    all_documents.extend(documents)
+    all_metadatas.extend(metadatas)
+    all_embeddings.extend(embeddings)
 
 # ===============================
 # PRODUCT INGESTION
 # ===============================
 def ingest_excel():
-    print("Checking existing product vector collection layers...")
-    
-    # Query specifically for product sources to check isolation status
-    existing_products = collection.get(where={"source": "excel"}, limit=1)
-    if existing_products and existing_products["ids"]:
-        print("[INFO] Product catalog vectors already exist. Skipping heavy product embedding loop.")
-        return
-
-    print("Processing CSV catalog via ultra-fast native memory slicing...")
+    print("\nProcessing CSV catalog via ultra-fast native memory slicing...")
     if not os.path.exists(CSV_PATH):
         print(f"[ERROR] Product catalog asset not found at: {CSV_PATH}")
         return
@@ -89,7 +84,7 @@ def ingest_excel():
                 "row_index": int(skip + len(docs) - 1)
             })
             
-        store_batch(docs, metas)
+        collect_batch(docs, metas)
         docs, metas = [], []
 
 # ===============================
@@ -105,17 +100,9 @@ def chunk_text(text, chunk_size=2000, overlap=300):
     return chunks
 
 def ingest_blogs():
-    print("Checking existing blog vector collection layers...")
-    
-    # Query specifically for blog sources to allow isolated ingestion
-    existing_blogs = collection.get(where={"source": "blog"}, limit=1)
-    if existing_blogs and existing_blogs["ids"]:
-        print("[INFO] Blog vectors already exist. Skipping blog embedding loop.")
-        return
-
-    # Call the dynamic checker to locate the active folder path
+    print("\nProcessing blogs directory text assets...")
     active_blogs_dir = get_blogs_directory()
-    print(f"Processing blogs directory text assets at: {active_blogs_dir}")
+    print(f"Targeting path at: {active_blogs_dir}")
     
     if not os.path.exists(active_blogs_dir):
         print(f"[WARNING] Blogs directory not found at {active_blogs_dir}, skipping.")
@@ -124,7 +111,6 @@ def ingest_blogs():
     docs = []
     metas = []
 
-    # Use the active directory variable for the loop
     blog_folders = [f for f in os.listdir(active_blogs_dir) if os.path.isdir(os.path.join(active_blogs_dir, f))]
     print(f"[INFO] Found {len(blog_folders)} blog assets to process.")
 
@@ -168,15 +154,56 @@ def ingest_blogs():
             metas.append(safe_metadata)
 
             if len(docs) >= BATCH_SIZE:
-                print(f"    [DISK-SYNC] Pushing a collection batch of {len(docs)} documents into disk partition...")
-                store_batch(docs, metas)
+                collect_batch(docs, metas)
                 docs, metas = [], []
 
     if docs:
-        print(f"    [DISK-SYNC] Flushing final leftover array of {len(docs)} documents into disk partition...")
-        store_batch(docs, metas)
+        collect_batch(docs, metas)
+
+# ===============================
+# METRICS & COMPRESSION COMPILER
+# ===============================
+def compile_quantized_index():
+    global all_embeddings, all_documents, all_metadatas
+    
+    if not all_embeddings:
+        print("[ERROR] No vectors generated to compile.")
+        return
+
+    print("\n--- Initiating Index Structural Compression Layer ---")
+    
+    # Form mathematical matrix layout
+    embeddings_matrix = np.array(all_embeddings).astype('float32')
+    total_vectors, dimension = embeddings_matrix.shape
+    print(f"Total Vectors Captured: {total_vectors} | Native Vector Dimensions: {dimension}")
+
+    print("Building 8-bit Scalar Quantization index mapping...")
+    # Quantize vectors to 8-bit integers while preserving Inner Product (Cosine Similarity for normalized text metrics)
+    quantizer = faiss.IndexFlatIP(dimension)
+    index = faiss.IndexScalarQuantizer(dimension, faiss.ScalarQuantizer.QT_8bit, faiss.METRIC_INNER_PRODUCT)
+    
+    print("Calibrating quantization parameters...")
+    index.train(embeddings_matrix)
+    
+    print("Injecting and compressing vector matrix layers...")
+    index.add(embeddings_matrix)
+
+    print(f"Writing compressed binary index asset to: {FAISS_INDEX_PATH}")
+    faiss.write_index(index, FAISS_INDEX_PATH)
+
+    print(f"Compiling secondary structural text map at: {METADATA_MAP_PATH}")
+    # Anchor the vector index index offsets seamlessly to the string document text strings
+    compiled_metadata_map = {}
+    for i in range(total_vectors):
+        compiled_metadata_map[str(i)] = {
+            "document": all_documents[i],
+            "metadata": all_metadatas[i]
+        }
         
-    print("[SUCCESS] Blog vectors successfully written to persistent layer.")
+    with open(METADATA_MAP_PATH, "w", encoding="utf-8") as f:
+        json.dump(compiled_metadata_map, f, ensure_ascii=False, indent=2)
+
+    print("🎉 Quantization Phase Completed. System footings optimized successfully.")
 
 # ===============================
 # ENTRYPOINT
@@ -187,10 +214,11 @@ def main():
     
     ingest_excel()
     ingest_blogs()
+    compile_quantized_index()
     
     duration = time.time() - start_time
     print(f"\n--- Production Data Volume Seeding Completed ---")
-    print(f"Native Ingestion completed successfully in {duration:.2f} seconds.\n")
+    print(f"Native Quantized Ingestion completed successfully in {duration:.2f} seconds.\n")
 
 if __name__ == "__main__":
     main()

@@ -19,6 +19,19 @@ RUN pip install --no-cache-dir -r requirements.txt && \
     python -c "import chromadb; print('✓ chromadb installed successfully')" && \
     python -c "import uvicorn; print('✓ uvicorn installed successfully')"
 
+# ... after copying requirements and running pip install ...
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# --- ADD THESE LINES TO CACHE MODELS DURING BUILD ---
+ENV HF_HOME=/app/.hf_cache
+COPY build_models.py .
+RUN python build_models.py
+# ----------------------------------------------------
+
+COPY . .
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+
 # Copy the rest of the application
 COPY . .
 

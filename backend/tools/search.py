@@ -9,7 +9,11 @@ from tavily import TavilyClient
 from dotenv import load_dotenv
 import gzip  # Built-in module to handle .gz streaming extraction
 
+# Load environment variables
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".env"))
+
+# Force local container file-system lookups for model caching
+os.environ["HF_HOME"] = "/app/.hf_cache" 
 
 # Resolve absolute pathing patterns aligned to your folder structures
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
